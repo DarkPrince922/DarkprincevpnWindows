@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using DarkPrinceVpn.Core;
 using DarkPrinceVpn.Data;
 using DarkPrinceVpn.Ui;
@@ -28,6 +29,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        LoadImages();
         // рамка окна по умолчанию светлая и выбивается из тёмного оформления
         DarkTitleBar.Apply(this, Color.FromRgb(0x0A, 0x0E, 0x17));
 
@@ -42,6 +44,41 @@ public partial class MainWindow : Window
 
         // следы прошлого запуска, если его завершили жёстко
         if (TunManager.IsElevated()) Task.Run(TunManager.ClearStaleState);
+    }
+
+    /// <summary>
+    /// Логотип и значок окна грузятся кодом, а не из разметки. Причина не в
+    /// красоте: разбор картинки в разметке идёт при построении окна, и любая,
+    /// которую не осилит декодер Windows, роняет приложение целиком — окно не
+    /// успевает появиться, и снаружи это выглядит как «программа не
+    /// запускается». Так на этом споткнулась иконка .ico со сжатыми в PNG
+    /// кадрами: проводник её показывает, а декодер WPF отказывается читать.
+    /// Здесь худшее, что может случиться, — окно без картинки.
+    /// </summary>
+    private void LoadImages()
+    {
+        var logo = LoadImage("pack://application:,,,/Assets/logo.png");
+        if (logo is null) return;
+        LogoImage.Source = logo;
+        Icon = logo;
+    }
+
+    private static BitmapImage? LoadImage(string uri)
+    {
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = new Uri(uri, UriKind.Absolute);
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>

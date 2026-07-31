@@ -4,7 +4,6 @@
         xmlns:ui="clr-namespace:DarkPrinceVpn.Ui"
         Title="DarkPrince VPN" Height="720" Width="470"
         Background="{StaticResource BackgroundBrush}"
-        Icon="Assets/app.ico"
         WindowStartupLocation="CenterScreen">
 
     <ui:AnimatedBackground>
@@ -12,7 +11,7 @@
         <!-- ================= ВХОД ================= -->
         <ScrollViewer x:Name="LoginPanel" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="28" VerticalAlignment="Center">
-                <Image Source="Assets/logo.png" Width="120" Height="120" />
+                <Image x:Name="LogoImage" Width="120" Height="120" />
                 <TextBlock x:Name="LoginTitle" Text="Вход" FontSize="26" FontWeight="SemiBold"
                            HorizontalAlignment="Center" Margin="0,16,0,20" />
 
