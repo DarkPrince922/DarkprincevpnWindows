@@ -15,11 +15,56 @@ const state = {
 
 // ================= окно =================
 
+// Свернуть — обычное сворачивание: кнопка остаётся на панели задач внизу,
+// значок — в трее. Приложение никуда не девается.
 $("#minimize").addEventListener("click", () => win.minimize());
 
-// Крестик прячет приложение в панель задач, а не закрывает: соединение
-// должно переживать закрытие окна. Полный выход — из меню значка.
-$("#close").addEventListener("click", () => win.hide());
+// Крестик спрашивает. Раньше он молча прятал окно, и это сбивало с толку:
+// человек «закрыл» приложение, запустил снова — и в трее стало два значка.
+// Теперь у него два ясных исхода, и оба он выбирает сам.
+$("#close").addEventListener("click", () => win.close());
+
+// Закрыть могут и мимо нашей кнопки: Alt+F4, «Закрыть окно» на панели
+// задач. Rust такое закрытие отменяет и присылает сюда — вопрос один и
+// тот же, откуда бы ни пришли.
+window.__TAURI__.event.listen("close-requested", askBeforeExit);
+
+function askBeforeExit() {
+    $("#exitHint").textContent = state.connected
+        ? "«Свернуть» — VPN продолжит работать, приложение останется в трее. "
+        + "«Выйти» — соединение разорвётся, процессы закроются, порты освободятся."
+        : "«Свернуть» — приложение останется в трее и откроется по значку. "
+        + "«Выйти» — закроется полностью, вместе со своими процессами.";
+    $("#exitAsk").classList.remove("hidden");
+    $("#exitHide").focus();
+}
+
+const closeAsk = () => $("#exitAsk").classList.add("hidden");
+
+$("#exitCancel").addEventListener("click", closeAsk);
+$("#exitAsk").addEventListener("click", (event) => {
+    if (event.target === $("#exitAsk")) closeAsk();
+});
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!$("#exitAsk").classList.contains("hidden")) closeAsk();
+    else if (!$("#sheet").classList.contains("hidden")) $("#sheet").classList.add("hidden");
+});
+
+$("#exitHide").addEventListener("click", () => {
+    closeAsk();
+    win.hide();
+});
+
+$("#exitQuit").addEventListener("click", () => {
+    // Уборка занимает время: разбор туннеля ходит в route и netsh. Пусть
+    // человек видит, что приложение занято делом, а не зависло.
+    $("#exitQuit").disabled = true;
+    $("#exitHide").disabled = true;
+    $("#exitCancel").disabled = true;
+    $("#exitHint").textContent = "Отключаюсь и закрываю процессы…";
+    invoke("quit_app");
+});
 
 // Команды из меню значка. Подключением занимается страница: она знает
 // выбранный сервер и режим, поэтому путь остаётся один и тот же.

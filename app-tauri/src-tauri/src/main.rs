@@ -10,7 +10,9 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use dp_engine::{Mode, Server, State, Vpn};
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,13 @@ use tauri::{Emitter, Manager, State as TauriState, WindowEvent};
 struct App {
     vpn: Arc<Mutex<Vpn>>,
     servers: Mutex<Vec<Server>>,
+    /// Нужен при выходе: по этим путям добиваем свои процессы.
+    core_dir: PathBuf,
 }
+
+/// Выход уже начат. Флаг разрывает круг: `exit` закрывает окно, окно снова
+/// присылает «просят закрыть», а тот обработчик закрытие отменяет.
+static QUITTING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Serialize)]
 struct ServerView {
@@ -115,17 +123,83 @@ fn status(app: TauriState<'_, App>) -> Status {
 
 /// Перезапуск с правами администратора — иначе режим «весь трафик»
 /// невозможен: без них не создать адаптер и не править маршруты.
+///
+/// Повышенная копия должна стартовать строго после того, как уйдёт нынешняя.
+/// Приложение теперь пускает себя в одном экземпляре, и копия, начатая
+/// слишком рано, увидела бы работающего предшественника и молча закрылась —
+/// перезапуск выглядел бы как «ничего не произошло». Поэтому запуск отдаём
+/// отдельной команде: она сперва дожидается конца нашего процесса.
 #[tauri::command]
 fn restart_elevated(app_handle: tauri::AppHandle) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
     let script = format!(
-        "Start-Process -FilePath '{}' -Verb RunAs",
-        exe.to_string_lossy().replace('\'', "''")
+        "Wait-Process -Id {pid} -Timeout 40 -ErrorAction SilentlyContinue; \
+         Start-Process -FilePath '{exe}' -Verb RunAs",
+        pid = std::process::id(),
+        exe = exe.to_string_lossy().replace('\'', "''"),
     );
-    dp_engine::sys::powershell(&script);
-    app_handle.exit(0);
+    dp_engine::sys::command("powershell")
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &script,
+        ])
+        .spawn()
+        .map_err(|error| format!("не удалось запустить перезапуск: {error}"))?;
+
+    // Уходим по-хорошему: соединение снимаем, процессы закрываем. Иначе
+    // повышенная копия столкнулась бы с занятыми портами и живым ядром.
+    quit(&app_handle);
     Ok(())
 }
+
+/// Разрешает обычному запуску разбудить приложение, работающее от
+/// администратора.
+///
+/// Второй запуск просит первый показаться сообщением окна. Windows не
+/// пропускает сообщения от менее привилегированного процесса к более
+/// привилегированному, а для режима «весь трафик» приложение работает от
+/// администратора. Без этого разрешения ярлык на рабочем столе перестал бы
+/// открывать уже работающее приложение: нажатие уходило бы в никуда.
+#[cfg(windows)]
+fn allow_wakeup_from_normal_user(identifier: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        ChangeWindowMessageFilterEx, FindWindowW, MSGFLT_ALLOW, WM_COPYDATA,
+    };
+
+    let wide = |text: String| {
+        text.encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>()
+    };
+    // имена окна задаёт сам плагин: идентификатор приложения и суффикс
+    let class = wide(format!("{identifier}-sic"));
+    let name = wide(format!("{identifier}-siw"));
+
+    // окно плагина создаётся не мгновенно — подождём его появления
+    std::thread::spawn(move || {
+        for _ in 0..30 {
+            let window = unsafe { FindWindowW(class.as_ptr(), name.as_ptr()) };
+            if !window.is_null() {
+                unsafe {
+                    ChangeWindowMessageFilterEx(
+                        window,
+                        WM_COPYDATA,
+                        MSGFLT_ALLOW,
+                        std::ptr::null_mut(),
+                    );
+                }
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn allow_wakeup_from_normal_user(_identifier: &str) {}
 
 fn show_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -219,20 +293,60 @@ fn os_version() -> String {
         .clone()
 }
 
-/// Полный выход: снимаем соединение и убиваем свои процессы, затем
-/// закрываемся. Отдельная кнопка нужна потому, что крестик окна теперь
-/// только прячет приложение в панель задач.
+/// Полный выход: снять соединение, вернуть системный прокси, убить свои
+/// процессы и освободить порты — и только потом закрыться.
+///
+/// Всё это делается на отдельном потоке. На потоке окна нельзя: разбор
+/// туннеля ходит в `route` и `netsh`, каждый вызов — десятые доли секунды,
+/// а пока поток окна занят, Windows рисует поверх приложения белый
+/// прямоугольник «программа не отвечает».
 fn quit(app: &tauri::AppHandle) {
-    if let Some(state) = app.try_state::<App>() {
-        if let Ok(mut vpn) = state.vpn.lock() {
-            vpn.disconnect();
-        }
+    // второе нажатие «Выход», пока идёт первое, ничего не меняет
+    if QUITTING.swap(true, Ordering::SeqCst) {
+        return;
     }
-    app.exit(0);
+
+    let handle = app.clone();
+    let core_dir = app
+        .try_state::<App>()
+        .map(|state| state.core_dir.clone())
+        .unwrap_or_default();
+
+    // Страховка на случай, если замок занят долгим подключением: выйти
+    // приложение обязано в любом случае, иначе значок останется висеть —
+    // ровно та беда, от которой мы уходим.
+    let failsafe = core_dir.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(25));
+        dp_engine::sys::log("выход затянулся — закрываемся принудительно");
+        Vpn::clear_stale_state(&failsafe);
+        std::process::exit(0);
+    });
+
+    std::thread::spawn(move || {
+        if let Some(state) = handle.try_state::<App>() {
+            if let Ok(mut vpn) = state.vpn.lock() {
+                vpn.disconnect();
+            }
+        }
+        // Своё, что могло пережить прошлый обрыв: процессы ядра и моста,
+        // маршруты туннеля. Без этого порт останется занят уже после нашего
+        // ухода, и следующий запуск начнётся с чужого порта.
+        Vpn::clear_stale_state(&core_dir);
+        dp_engine::sys::log("--- выход ---");
+        handle.exit(0);
+    });
 }
 
 fn main() {
     tauri::Builder::default()
+        // Второй запуск не поднимает второе приложение, а показывает уже
+        // работающее. Без этого каждый повторный запуск вешал в трей ещё
+        // один значок: приложение живёт с закрытым окном, ярлык об этом не
+        // знает, и значки копились по числу запусков.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_window(app);
+        }))
         .setup(|app| {
             let resources = app.path().resource_dir().unwrap_or_else(|_| PathBuf::from("."));
             let core_dir = resources.join("core");
@@ -249,12 +363,15 @@ fn main() {
                 core_dir.display()
             ));
 
+            allow_wakeup_from_normal_user(&app.config().identifier);
+
             // следы прошлого запуска, если его завершили жёстко
             Vpn::clear_stale_state(&core_dir);
 
             app.manage(App {
-                vpn: Arc::new(Mutex::new(Vpn::new(core_dir, data_dir))),
+                vpn: Arc::new(Mutex::new(Vpn::new(core_dir.clone(), data_dir))),
                 servers: Mutex::new(Vec::new()),
+                core_dir,
             });
 
             // Значок в панели задач. Приложение продолжает работать с
@@ -293,14 +410,22 @@ fn main() {
                 })
                 .build(app)?;
 
-            // Крестик окна прячет приложение, а не закрывает: соединение
-            // должно переживать закрытие окна.
+            // Крестик сам по себе ничего не решает: закрыть окно и закрыть
+            // приложение — разные вещи, а соединение переживает закрытое
+            // окно. Спрашиваем, и спрашивает страница — своим окном, а не
+            // системным, чтобы вопрос не выглядел чужим.
             if let Some(window) = app.get_webview_window("main") {
                 let handle = window.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
+                        if QUITTING.load(Ordering::SeqCst) {
+                            return; // выход уже идёт — не мешаем
+                        }
                         api.prevent_close();
-                        let _ = handle.hide();
+                        let _ = handle.show();
+                        let _ = handle.unminimize();
+                        let _ = handle.set_focus();
+                        let _ = handle.emit("close-requested", ());
                     }
                 });
             }

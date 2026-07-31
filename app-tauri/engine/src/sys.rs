@@ -114,6 +114,31 @@ pub fn pick_port(preferred: u16) -> u16 {
         .unwrap_or(preferred)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    #[test]
+    fn free_port_is_taken_as_is() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port(); // слушателя тут же роняем — порт снова свободен
+        assert_eq!(pick_port(port), port);
+    }
+
+    #[test]
+    fn busy_port_sends_us_elsewhere() {
+        let squatter = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy = squatter.local_addr().unwrap().port();
+        let picked = pick_port(busy);
+        assert_ne!(picked, busy, "занятый порт брать нельзя");
+        assert!(TcpListener::bind(("127.0.0.1", picked)).is_ok(), "выданный порт занят");
+    }
+}
+
 /// Снимает только свои забытые процессы — по полному пути к файлу.
 /// Снимать по имени нельзя: `xray.exe` есть у половины VPN-клиентов, и
 /// чужой процесс — не наша собственность.

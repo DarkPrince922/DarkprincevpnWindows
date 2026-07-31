@@ -21,7 +21,7 @@
         <button class="winbtn" id="minimize" title="Свернуть">
             <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 5.5h11" stroke="currentColor" stroke-width="1.2" /></svg>
         </button>
-        <button class="winbtn close" id="close" title="Свернуть в панель задач">
+        <button class="winbtn close" id="close" title="Закрыть">
             <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 0l11 11M11 0L0 11" stroke="currentColor" stroke-width="1.2" /></svg>
         </button>
     </header>
@@ -128,6 +128,17 @@
             <div class="grip"></div>
             <p class="section">Выберите сервер</p>
             <div id="serverList"></div>
+        </div>
+    </div>
+
+    <!-- ================= ВОПРОС ПРИ ЗАКРЫТИИ ================= -->
+    <div class="modal hidden" id="exitAsk">
+        <div class="dialog">
+            <h3>Закрыть DarkPrince VPN?</h3>
+            <p class="tiny muted" id="exitHint"></p>
+            <button class="primary block" id="exitHide">Свернуть в трей</button>
+            <button class="danger block" id="exitQuit">Выйти полностью</button>
+            <button class="ghost small block" id="exitCancel">Отмена</button>
         </div>
     </div>
 

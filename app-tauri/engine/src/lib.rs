@@ -88,6 +88,23 @@ impl Vpn {
             return Err("режим «весь трафик» требует запуска от имени администратора".into());
         }
 
+        // Порты выбираем заново на каждое подключение: привычные могли
+        // занять другим VPN-клиентом, пока мы стояли. Чужой процесс за это
+        // снимать нельзя — просто уходим на свободный порт.
+        self.socks_port = sys::pick_port(config::SOCKS_PORT);
+        self.http_port = loop {
+            let port = sys::pick_port(config::HTTP_PORT);
+            if port != self.socks_port {
+                break port;
+            }
+        };
+        if (self.socks_port, self.http_port) != (config::SOCKS_PORT, config::HTTP_PORT) {
+            sys::log(&format!(
+                "привычные порты заняты, берём свои: socks {}, http {}",
+                self.socks_port, self.http_port
+            ));
+        }
+
         sys::log(&format!(
             "подключение: сервер «{}», режим {}",
             server.name,
@@ -112,13 +129,13 @@ impl Vpn {
     fn bring_up(&mut self, server: &Server, mode: Mode) -> Result<(), String> {
         self.start_xray(server)?;
         match mode {
-            Mode::Proxy => proxy::enable(config::HTTP_PORT)?,
+            Mode::Proxy => proxy::enable(self.http_port)?,
             Mode::Tun => {
                 let bridge = self.core_dir.join("tun2socks.exe");
                 self.tunnel.start(
                     &bridge,
                     &[server.address.clone()],
-                    config::SOCKS_PORT,
+                    self.socks_port,
                     &self.data_dir,
                 )?;
             }

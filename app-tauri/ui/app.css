@@ -428,6 +428,48 @@ body.connected #stateText { color: var(--text); }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { transform: translateY(24px); } }
 
+/* ---------- вопрос при закрытии ---------- */
+
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(6, 9, 16, 0.66);
+    backdrop-filter: blur(7px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fade 0.16s ease;
+}
+
+.modal .dialog {
+    width: 100%;
+    max-width: 330px;
+    background: var(--surface-solid);
+    border: 1px solid var(--outline);
+    border-radius: 20px;
+    padding: 20px 18px 16px;
+    text-align: center;
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
+    animation: pop 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pop { from { transform: scale(0.94); opacity: 0; } }
+
+.modal h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+.modal p { margin: 0 0 16px; line-height: 1.5; }
+.modal button.block { margin-bottom: 8px; }
+.modal button.block:last-child { margin-bottom: 0; }
+
+button.danger {
+    background: rgba(224, 91, 91, 0.12);
+    border-color: rgba(224, 91, 91, 0.4);
+    color: #f0b4b4;
+}
+
+button.danger:hover { border-color: var(--danger); }
+
 .server {
     display: flex;
     align-items: center;
