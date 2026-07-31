@@ -1,0 +1,15 @@
+[package]
+name = "dp-engine"
+version = "0.1.0"
+edition = "2021"
+
+# Движок намеренно не зависит от Tauri и от Windows-крейтов: так он
+# проверяется компилятором на любой машине, а не только при сборке
+# приложения. Всё общение с системой идёт через её же программы —
+# route, netsh, reg — и через запуск ядра и моста.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet"] }
