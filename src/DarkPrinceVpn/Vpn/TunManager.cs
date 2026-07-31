@@ -87,10 +87,13 @@ public sealed class TunManager : IDisposable
         var info = new ProcessStartInfo
         {
             FileName = ExecutablePath,
+            // Флаги строго с двумя дефисами: мост разбирает их библиотекой
+            // pflag, и «-loglevel» она читает как набор коротких флагов —
+            // печатает справку и выходит, не создав адаптер.
             Arguments =
-                $"-device tun://{AdapterName} " +
-                $"-proxy socks5://127.0.0.1:{XrayConfigBuilder.SocksPort} " +
-                "-loglevel warning",
+                $"--device tun://{AdapterName} " +
+                $"--proxy socks5://127.0.0.1:{XrayConfigBuilder.SocksPort} " +
+                "--loglevel warning",
             // wintun.dll лежит рядом с мостом
             WorkingDirectory = AppPaths.CoreDirectory,
             UseShellExecute = false,

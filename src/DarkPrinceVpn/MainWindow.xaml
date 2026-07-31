@@ -72,8 +72,14 @@
                                 <Button x:Name="PowerButton" Width="176" Height="176"
                                         Background="Transparent"
                                         BorderThickness="0" Click="OnPowerClick">
-                                    <TextBlock x:Name="PowerIcon" Text="⏻" FontSize="60"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <!-- значок питания рисуем вектором: символа ⏻
+                                         нет в системных шрифтах, вместо него
+                                         показывался пустой прямоугольник -->
+                                    <Path x:Name="PowerIcon" Width="62" Height="62"
+                                          Stretch="Uniform" StrokeThickness="2.2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          Stroke="{StaticResource SecondaryTextBrush}"
+                                          Data="M18.36,6.64 a9,9 0 1 1 -12.73,0 M12,2 L12,12" />
                                 </Button>
                             </Grid>
 

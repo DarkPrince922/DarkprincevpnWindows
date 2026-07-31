@@ -388,21 +388,21 @@ public partial class MainWindow : Window
                 StateText.Text = _vpn.Mode == VpnMode.Tun
                     ? "Подключено · весь трафик"
                     : "Подключено · системный прокси";
-                PowerIcon.Foreground = gold;
+                PowerIcon.Stroke = gold;
                 PowerRing.Stroke = gold;
                 break;
             case VpnState.Connecting:
                 StateText.Text = _vpn.Mode == VpnMode.Tun
                     ? "Поднимаю туннель… это занимает несколько секунд"
                     : "Подключение…";
-                PowerIcon.Foreground = muted;
+                PowerIcon.Stroke = muted;
                 PowerRing.Stroke = muted;
                 break;
             default:
                 StateText.Text = _vpn.IsBusy
                     ? "Отключение…"
                     : "Нажмите для подключения";
-                PowerIcon.Foreground = muted;
+                PowerIcon.Stroke = muted;
                 PowerRing.Stroke = outline;
                 break;
         }
