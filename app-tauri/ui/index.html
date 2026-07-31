@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8">
+    <title>DarkPrince VPN</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+
+<body>
+    <div class="blobs">
+        <div class="blob a"></div>
+        <div class="blob b"></div>
+        <div class="blob c"></div>
+    </div>
+
+    <header class="titlebar" data-tauri-drag-region>
+        <img src="logo.png" alt="" data-tauri-drag-region>
+        <span class="name" data-tauri-drag-region>DarkPrince <i>VPN</i></span>
+        <span class="spacer" data-tauri-drag-region></span>
+        <button class="winbtn" id="minimize" title="Свернуть">
+            <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 5.5h11" stroke="currentColor" stroke-width="1.2" /></svg>
+        </button>
+        <button class="winbtn close" id="close" title="Закрыть">
+            <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 0l11 11M11 0L0 11" stroke="currentColor" stroke-width="1.2" /></svg>
+        </button>
+    </header>
+
+    <main>
+        <!-- ================= ВХОД ================= -->
+        <section id="auth">
+            <img class="logo" src="logo.png" alt="">
+            <h1 id="authTitle">Вход</h1>
+            <p class="lead" id="authLead">
+                Если вы покупали подписку у бота — входите через Telegram,
+                всё подтянется само.
+            </p>
+
+            <div id="authMessage" class="msg hidden"></div>
+
+            <button class="primary block" id="telegramButton">Войти через Telegram</button>
+
+            <div class="divider">ИЛИ ПО ПОЧТЕ</div>
+
+            <form id="emailForm">
+                <label class="field">
+                    <span>E-mail</span>
+                    <input type="email" id="email" autocomplete="email" required>
+                </label>
+                <label class="field">
+                    <span>Пароль</span>
+                    <input type="password" id="password" minlength="6" required>
+                </label>
+                <label class="field hidden" id="referralField">
+                    <span>Реферальный код (необязательно)</span>
+                    <input type="text" id="referral">
+                </label>
+                <button class="block" id="emailSubmit" type="submit">Войти</button>
+            </form>
+
+            <div class="row" style="margin-top:8px">
+                <button class="ghost small grow" id="toggleRegister">Нет аккаунта? Регистрация</button>
+                <button class="ghost small" id="forgot">Забыли пароль?</button>
+            </div>
+        </section>
+
+        <!-- ================= ГЛАВНОЕ ================= -->
+        <section id="home" class="hidden">
+            <div class="power-wrap">
+                <button class="power" id="power" title="Подключиться">
+                    <svg viewBox="0 0 24 24" stroke-linecap="round">
+                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                        <path d="M12 2v10" />
+                    </svg>
+                </button>
+            </div>
+            <p id="stateText">Нажмите для подключения</p>
+
+            <div id="homeMessage" class="msg hidden"></div>
+
+            <p class="section">Режим</p>
+            <div class="segmented" id="modes">
+                <button data-mode="proxy" aria-selected="true">Прокси</button>
+                <button data-mode="tun" aria-selected="false">Весь трафик</button>
+            </div>
+            <p class="tiny muted" id="modeHint" style="margin:8px 4px 14px"></p>
+
+            <p class="section">Сервер</p>
+            <div class="card">
+                <button class="pick" id="serverPick">
+                    <span class="dot"></span>
+                    <span class="grow">
+                        <span class="ellipsis" id="serverName" style="display:block">Загружаю подписку…</span>
+                        <span class="tiny muted" id="serverTransport"></span>
+                    </span>
+                    <span class="chev">›</span>
+                </button>
+            </div>
+
+            <p class="section">Подписка</p>
+            <div class="card" id="subscriptionCard">
+                <div class="row">
+                    <div class="grow">
+                        <div id="planName">—</div>
+                        <div class="tiny muted" id="planState"></div>
+                    </div>
+                    <div style="text-align:right">
+                        <div class="gold" style="font-size:26px;font-weight:600;line-height:1" id="days">—</div>
+                        <div class="tiny muted" id="daysWord"></div>
+                    </div>
+                </div>
+                <div class="bar" id="trafficBar"><i style="width:0"></i></div>
+                <div class="kv"><span class="k">Трафик</span><span id="traffic">—</span></div>
+                <div class="kv"><span class="k">Устройств по тарифу</span><span id="devices">—</span></div>
+            </div>
+
+            <div class="row" style="margin-top:4px">
+                <button class="ghost small grow" id="openCabinet">Личный кабинет</button>
+                <button class="ghost small" id="refresh">Обновить</button>
+                <button class="ghost small" id="logout">Выйти</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- ================= СПИСОК СЕРВЕРОВ ================= -->
+    <div class="sheet hidden" id="sheet">
+        <div class="panel">
+            <div class="grip"></div>
+            <p class="section">Выберите сервер</p>
+            <div id="serverList"></div>
+        </div>
+    </div>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
