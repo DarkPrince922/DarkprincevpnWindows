@@ -192,9 +192,22 @@ async function loadSubscription() {
 const isActive = (sub) =>
     ["active", "trial"].includes(String(sub.status || "").toLowerCase()) || sub.is_active === true;
 
+// Идентификатор этого компьютера для учёта в панели. Живёт один на
+// установку: переустановка приложения не должна съедать ещё одно место
+// в лимите устройств.
+function deviceId() {
+    let id = localStorage.getItem("dp_hwid");
+    if (!id) {
+        id = (crypto.randomUUID && crypto.randomUUID())
+            || `win-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+        localStorage.setItem("dp_hwid", id);
+    }
+    return id;
+}
+
 async function loadServers(url) {
     try {
-        state.servers = await invoke("load_subscription", { url });
+        state.servers = await invoke("load_subscription", { url, hwid: deviceId() });
         const saved = Number(localStorage.getItem("dp_server") || 0);
         state.selected = saved < state.servers.length ? saved : 0;
         renderServer();

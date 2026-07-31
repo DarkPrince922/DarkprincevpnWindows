@@ -53,8 +53,12 @@ struct Response {
 
 /// Загружает подписку и запоминает список серверов.
 #[tauri::command]
-async fn load_subscription(url: String, app: TauriState<'_, App>) -> Result<Vec<ServerView>, String> {
-    let text = fetch_text(&url).await?;
+async fn load_subscription(
+    url: String,
+    hwid: String,
+    app: TauriState<'_, App>,
+) -> Result<Vec<ServerView>, String> {
+    let text = fetch_subscription(&url, &hwid).await?;
     let servers = dp_engine::subscription::parse(&text);
     if servers.is_empty() {
         return Err("подписка пуста или в незнакомом формате".into());
@@ -155,11 +159,25 @@ async fn http(request: Request) -> Result<Response, String> {
     Ok(Response { status, body })
 }
 
-async fn fetch_text(url: &str) -> Result<String, String> {
+/// Скачивание подписки. Заголовки здесь не украшение:
+///
+/// * панель отдаёт формат по клиенту — без `User-Agent` известного клиента
+///   вместо конфига Xray приходит совсем другое, и разбирать нечего;
+/// * по `x-hwid` и соседям панель ведёт учёт устройств. Без них компьютер не
+///   появится в списке устройств кабинета, а лимит тарифа не сработает.
+async fn fetch_subscription(url: &str, hwid: &str) -> Result<String, String> {
+    let mut headers = HashMap::new();
+    headers.insert("User-Agent".to_string(), "v2rayNG/1.10.7".to_string());
+    headers.insert("Accept".to_string(), "text/plain".to_string());
+    headers.insert("x-hwid".to_string(), hwid.to_string());
+    headers.insert("x-device-os".to_string(), "Windows".to_string());
+    headers.insert("x-ver-os".to_string(), os_version());
+    headers.insert("x-device-model".to_string(), machine_name());
+
     let response = http(Request {
         method: "GET".into(),
         url: url.to_string(),
-        headers: HashMap::new(),
+        headers,
         body: None,
     })
     .await?;
@@ -167,6 +185,22 @@ async fn fetch_text(url: &str) -> Result<String, String> {
         return Err(format!("сервер подписки ответил {}", response.status));
     }
     Ok(response.body)
+}
+
+fn machine_name() -> String {
+    std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string())
+}
+
+/// Версия системы спрашивается один раз за запуск: ответ не меняется, а
+/// вызов стоит около четверти секунды.
+fn os_version() -> String {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            dp_engine::sys::powershell("[System.Environment]::OSVersion.Version.ToString()")
+                .unwrap_or_else(|| "10.0".to_string())
+        })
+        .clone()
 }
 
 fn main() {
