@@ -14,7 +14,9 @@ use std::sync::{Arc, Mutex};
 
 use dp_engine::{Mode, Server, State, Vpn};
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State as TauriState};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{Emitter, Manager, State as TauriState, WindowEvent};
 
 struct App {
     vpn: Arc<Mutex<Vpn>>,
@@ -125,6 +127,20 @@ fn restart_elevated(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn show_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// Полный выход по кнопке из окна.
+#[tauri::command]
+fn quit_app(app_handle: tauri::AppHandle) {
+    quit(&app_handle);
+}
+
 #[tauri::command]
 fn open_url(url: String) {
     // ссылку открываем в браузере по умолчанию
@@ -203,6 +219,19 @@ fn os_version() -> String {
         .clone()
 }
 
+/// Полный выход: снимаем соединение и убиваем свои процессы, затем
+/// закрываемся. Отдельная кнопка нужна потому, что крестик окна теперь
+/// только прячет приложение в панель задач.
+fn quit(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<App>() {
+        let vpn = Arc::clone(&state.vpn);
+        if let Ok(mut vpn) = vpn.lock() {
+            vpn.disconnect();
+        }
+    }
+    app.exit(0);
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -228,6 +257,54 @@ fn main() {
                 vpn: Arc::new(Mutex::new(Vpn::new(core_dir, data_dir))),
                 servers: Mutex::new(Vec::new()),
             });
+
+            // Значок в панели задач. Приложение продолжает работать с
+            // закрытым окном: соединение живёт, пока его не выключат явно.
+            let open = MenuItem::with_id(app, "open", "Открыть", true, None::<&str>)?;
+            let connect = MenuItem::with_id(app, "connect", "Подключиться", true, None::<&str>)?;
+            let disconnect =
+                MenuItem::with_id(app, "disconnect", "Отключиться", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &connect, &disconnect, &quit_item])?;
+
+            TrayIconBuilder::with_id("main")
+                .icon(app.default_window_icon().cloned().unwrap())
+                .tooltip("DarkPrince VPN")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "open" => show_window(app),
+                    // подключением занимается страница: она знает выбранный
+                    // сервер и режим, и делает это тем же путём, что и кнопка
+                    "connect" => {
+                        let _ = app.emit("tray", "connect");
+                    }
+                    "disconnect" => {
+                        let _ = app.emit("tray", "disconnect");
+                    }
+                    "quit" => quit(app),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click { button, .. } = event {
+                        if button == tauri::tray::MouseButton::Left {
+                            show_window(tray.app_handle());
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Крестик окна прячет приложение, а не закрывает: соединение
+            // должно переживать закрытие окна.
+            if let Some(window) = app.get_webview_window("main") {
+                let handle = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = handle.hide();
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -237,6 +314,7 @@ fn main() {
             status,
             restart_elevated,
             open_url,
+            quit_app,
             http
         ])
         .run(tauri::generate_context!())

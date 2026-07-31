@@ -16,14 +16,16 @@ const state = {
 // ================= окно =================
 
 $("#minimize").addEventListener("click", () => win.minimize());
-$("#close").addEventListener("click", async () => {
-    // туннель снимаем до выхода, иначе система останется с чужими маршрутами
-    try {
-        await invoke("disconnect");
-    } catch {
-        // если не вышло — выходим всё равно, иначе окно не закрыть
-    }
-    win.close();
+
+// Крестик прячет приложение в панель задач, а не закрывает: соединение
+// должно переживать закрытие окна. Полный выход — из меню значка.
+$("#close").addEventListener("click", () => win.hide());
+
+// Команды из меню значка. Подключением занимается страница: она знает
+// выбранный сервер и режим, поэтому путь остаётся один и тот же.
+window.__TAURI__.event.listen("tray", async (event) => {
+    if (event.payload === "connect" && !state.connected && !state.busy) await connect();
+    if (event.payload === "disconnect" && state.connected && !state.busy) await disconnectNow();
 });
 
 function message(node, text, type = "err") {
@@ -304,17 +306,21 @@ function renderMode() {
 $("#power").addEventListener("click", async () => {
     if (state.busy) return;
     if (state.connected) {
-        await setBusy(true, "Отключение…");
-        try {
-            await invoke("disconnect");
-        } finally {
-            state.connected = false;
-            await setBusy(false);
-        }
+        await disconnectNow();
         return;
     }
     await connect();
 });
+
+async function disconnectNow() {
+    await setBusy(true, "Отключение…");
+    try {
+        await invoke("disconnect");
+    } finally {
+        state.connected = false;
+        await setBusy(false);
+    }
+}
 
 async function connect() {
     if (!state.servers.length) {

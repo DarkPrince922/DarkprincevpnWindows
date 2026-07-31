@@ -45,7 +45,7 @@ impl Tunnel {
 
         // Прошлый запуск мог быть снят жёстко — уберём его следы, иначе
         // трафик пойдёт в туннель, которого больше нет.
-        clear_stale_state();
+        clear_stale_state(bridge.parent().unwrap_or(Path::new(".")));
 
         let gateway = default_gateway()
             .ok_or("не удалось определить основной шлюз — проверьте подключение к сети")?;
@@ -177,10 +177,10 @@ fn adapter_index() -> Option<u32> {
 }
 
 /// Следы предыдущего запуска, оборванного не по-хорошему.
-pub fn clear_stale_state() {
+pub fn clear_stale_state(core_dir: &Path) {
     sys::run("route", &["delete", "0.0.0.0", "mask", "128.0.0.0", ADDRESS]);
     sys::run("route", &["delete", "128.0.0.0", "mask", "128.0.0.0", ADDRESS]);
-    sys::run("taskkill", &["/F", "/IM", "tun2socks.exe"]);
+    sys::kill_our(&core_dir.join("tun2socks.exe"));
 }
 
 /// Запущено ли приложение с правами администратора.

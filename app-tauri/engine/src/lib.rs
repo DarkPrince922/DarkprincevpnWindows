@@ -46,6 +46,11 @@ pub struct Vpn {
     tunnel: tun::Tunnel,
     state: State,
     mode: Mode,
+    /// Порты выбираются при каждом подключении: желаемые могут быть заняты
+    /// другим VPN-клиентом. Помним выбранные, чтобы правильно погасить
+    /// системный прокси при отключении.
+    socks_port: u16,
+    http_port: u16,
 }
 
 impl Vpn {
@@ -57,6 +62,8 @@ impl Vpn {
             tunnel: tun::Tunnel::new(),
             state: State::Disconnected,
             mode: Mode::Proxy,
+            socks_port: config::SOCKS_PORT,
+            http_port: config::HTTP_PORT,
         }
     }
 
@@ -131,7 +138,10 @@ impl Vpn {
 
         std::fs::create_dir_all(&self.data_dir).ok();
         let config_path = self.data_dir.join("xray-config.json");
-        std::fs::write(&config_path, config::build(&server.raw_config)?)
+        std::fs::write(
+            &config_path,
+            config::build(&server.raw_config, self.socks_port, self.http_port)?,
+        )
             .map_err(|error| format!("не удалось сохранить конфиг ядра: {error}"))?;
         sys::log(&format!("конфиг: {}", config_path.display()));
 
@@ -150,7 +160,7 @@ impl Vpn {
         // Мало запустить — надо дождаться, пока ядро начнёт принимать
         // соединения. Без этой проверки сломанный конфиг выглядел бы как
         // успешное подключение, у которого просто «не работает интернет».
-        if !sys::wait_for_port(config::SOCKS_PORT, Duration::from_secs(6)) {
+        if !sys::wait_for_port(self.socks_port, Duration::from_secs(6)) {
             let tail = tail_of(&log_path);
             sys::log(&format!("ядро не открыло порт. Хвост журнала:\n{tail}"));
             return Err(format!(
@@ -164,7 +174,7 @@ impl Vpn {
     pub fn disconnect(&mut self) {
         // системный прокси гасим только свой: пользователь мог настроить
         // собственный, и затирать его чужими руками нельзя
-        if proxy::is_ours(config::HTTP_PORT) {
+        if proxy::is_ours(self.http_port) {
             proxy::disable();
         }
         self.tunnel.stop();
@@ -177,9 +187,8 @@ impl Vpn {
 
     /// Уборка следов прошлого запуска, оборванного жёстко.
     pub fn clear_stale_state(core_dir: &Path) {
-        let _ = core_dir;
-        sys::run("taskkill", &["/F", "/IM", "xray.exe"]);
-        tun::clear_stale_state();
+        sys::kill_our(&core_dir.join("xray.exe"));
+        tun::clear_stale_state(core_dir);
     }
 }
 

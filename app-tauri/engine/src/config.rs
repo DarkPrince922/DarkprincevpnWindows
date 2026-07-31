@@ -7,11 +7,13 @@
 
 use serde_json::{json, Value};
 
+/// Порты по умолчанию. Если заняты — берём любые свободные: занять их мог
+/// другой VPN-клиент, и убивать его процессы мы не вправе.
 pub const SOCKS_PORT: u16 = 10808;
 pub const HTTP_PORT: u16 = 10809;
 
 /// Возвращает готовый конфиг ядра или ошибку, если узел содержит не JSON.
-pub fn build(raw_config: &str) -> Result<String, String> {
+pub fn build(raw_config: &str, socks_port: u16, http_port: u16) -> Result<String, String> {
     let mut config: Value = serde_json::from_str(raw_config)
         .map_err(|error| format!("конфиг сервера не разобрать: {error}"))?;
 
@@ -19,7 +21,10 @@ pub fn build(raw_config: &str) -> Result<String, String> {
         .as_object_mut()
         .ok_or_else(|| "конфиг сервера должен быть объектом".to_string())?;
 
-    object.insert("inbounds".into(), json!([socks_inbound(), http_inbound()]));
+    object.insert(
+        "inbounds".into(),
+        json!([socks_inbound(socks_port), http_inbound(http_port)]),
+    );
     object.entry("log").or_insert_with(|| json!({"loglevel": "warning"}));
     object.entry("stats").or_insert_with(|| json!({}));
     object.entry("policy").or_insert_with(|| {
@@ -29,22 +34,22 @@ pub fn build(raw_config: &str) -> Result<String, String> {
     Ok(config.to_string())
 }
 
-fn socks_inbound() -> Value {
+fn socks_inbound(port: u16) -> Value {
     json!({
         "tag": "socks",
         "listen": "127.0.0.1",
-        "port": SOCKS_PORT,
+        "port": port,
         "protocol": "socks",
         "settings": {"auth": "noauth", "udp": true},
         "sniffing": {"enabled": true, "destOverride": ["http", "tls"], "routeOnly": false}
     })
 }
 
-fn http_inbound() -> Value {
+fn http_inbound(port: u16) -> Value {
     json!({
         "tag": "http",
         "listen": "127.0.0.1",
-        "port": HTTP_PORT,
+        "port": port,
         "protocol": "http",
         "settings": {},
         "sniffing": {"enabled": true, "destOverride": ["http", "tls"], "routeOnly": false}
@@ -60,7 +65,7 @@ mod tests {
         let raw = r#"{"outbounds":[{"protocol":"vless","tag":"proxy"}],
                       "routing":{"rules":[{"type":"field","outboundTag":"direct"}]},
                       "inbounds":[{"port":1080}]}"#;
-        let built: Value = serde_json::from_str(&build(raw).unwrap()).unwrap();
+        let built: Value = serde_json::from_str(&build(raw, SOCKS_PORT, HTTP_PORT).unwrap()).unwrap();
 
         let inbounds = built["inbounds"].as_array().unwrap();
         assert_eq!(inbounds.len(), 2);
@@ -74,12 +79,12 @@ mod tests {
     #[test]
     fn own_log_settings_win() {
         let raw = r#"{"log":{"loglevel":"debug"},"outbounds":[]}"#;
-        let built: Value = serde_json::from_str(&build(raw).unwrap()).unwrap();
+        let built: Value = serde_json::from_str(&build(raw, SOCKS_PORT, HTTP_PORT).unwrap()).unwrap();
         assert_eq!(built["log"]["loglevel"], "debug");
     }
 
     #[test]
     fn broken_config_reports_error() {
-        assert!(build("не json").is_err());
+        assert!(build("не json", SOCKS_PORT, HTTP_PORT).is_err());
     }
 }

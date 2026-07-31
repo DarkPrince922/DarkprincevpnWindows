@@ -100,3 +100,31 @@ pub fn wait_for_port(port: u16, timeout: std::time::Duration) -> bool {
     }
     false
 }
+
+/// Свободный порт: сначала пробуем желаемый, иначе просим систему выдать
+/// любой. Занять наш порт мог другой VPN-клиент — это не повод ни падать,
+/// ни убивать чужой процесс.
+pub fn pick_port(preferred: u16) -> u16 {
+    if std::net::TcpListener::bind(("127.0.0.1", preferred)).is_ok() {
+        return preferred;
+    }
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|listener| listener.local_addr())
+        .map(|address| address.port())
+        .unwrap_or(preferred)
+}
+
+/// Снимает только свои забытые процессы — по полному пути к файлу.
+/// Снимать по имени нельзя: `xray.exe` есть у половины VPN-клиентов, и
+/// чужой процесс — не наша собственность.
+pub fn kill_our(path: &std::path::Path) {
+    let name = match path.file_stem().and_then(|stem| stem.to_str()) {
+        Some(name) => name,
+        None => return,
+    };
+    let full = path.to_string_lossy().replace('\'', "''");
+    powershell(&format!(
+        "Get-Process '{name}' -ErrorAction SilentlyContinue | \
+         Where-Object {{ $_.Path -eq '{full}' }} | Stop-Process -Force"
+    ));
+}
