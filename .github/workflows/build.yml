@@ -1,0 +1,53 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Собрать
+        run: dotnet publish src/DarkPrinceVpn/DarkPrinceVpn.csproj -c Release -o publish
+
+      - name: Скачать ядро и мост
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-cores.ps1 -OutputDirectory publish/core
+
+      - name: Проверить состав сборки
+        shell: pwsh
+        run: |
+          $required = @(
+            "publish/DarkPrinceVPN.exe",
+            "publish/core/xray.exe",
+            "publish/core/tun2socks.exe",
+            "publish/core/wintun.dll"
+          )
+          $missing = $required | Where-Object { -not (Test-Path $_) }
+          if ($missing) {
+            Write-Error "В сборке не хватает файлов: $($missing -join ', ')"
+            exit 1
+          }
+          Get-ChildItem publish -Recurse | Select-Object FullName, Length | Format-Table
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DarkPrinceVPN-windows
+          path: publish/
+          if-no-files-found: error

@@ -1,0 +1,98 @@
+<Window x:Class="DarkPrinceVpn.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DarkPrince VPN" Height="640" Width="460"
+        Background="{StaticResource BackgroundBrush}"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Кнопка подключения -->
+        <Grid Grid.Row="0" Height="200">
+            <Ellipse x:Name="PowerRing" Width="170" Height="170"
+                     Stroke="{StaticResource OutlineBrush}" StrokeThickness="2"
+                     Fill="{StaticResource SurfaceBrush}" />
+            <Button x:Name="PowerButton" Width="170" Height="170"
+                    Background="Transparent" BorderThickness="0"
+                    Click="OnPowerClick">
+                <TextBlock x:Name="PowerIcon" Text="⏻" FontSize="64"
+                           Foreground="{StaticResource SecondaryTextBrush}" />
+            </Button>
+        </Grid>
+
+        <TextBlock Grid.Row="1" x:Name="StateText" Text="Нажмите для подключения"
+                   HorizontalAlignment="Center" FontSize="15"
+                   Foreground="{StaticResource SecondaryTextBrush}"
+                   Margin="0,4,0,18" TextWrapping="Wrap" TextAlignment="Center" />
+
+        <!-- Режим работы -->
+        <StackPanel Grid.Row="2" Margin="0,0,0,18">
+            <TextBlock Style="{StaticResource SectionHeader}" Text="РЕЖИМ" />
+            <Border Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource OutlineBrush}" BorderThickness="1"
+                    CornerRadius="12" Padding="12">
+                <StackPanel>
+                    <RadioButton x:Name="ModeProxy" GroupName="Mode" IsChecked="True"
+                                 Foreground="{StaticResource TextBrush}"
+                                 Content="Системный прокси" />
+                    <TextBlock Text="Без прав администратора. Работает в браузерах и большинстве программ."
+                               Foreground="{StaticResource SecondaryTextBrush}" FontSize="11"
+                               TextWrapping="Wrap" Margin="20,2,0,10" />
+                    <RadioButton x:Name="ModeTun" GroupName="Mode"
+                                 Foreground="{StaticResource TextBrush}"
+                                 Content="TUN — весь трафик" />
+                    <TextBlock Text="Перехватывает трафик всех программ. Требует запуска от администратора."
+                               Foreground="{StaticResource SecondaryTextBrush}" FontSize="11"
+                               TextWrapping="Wrap" Margin="20,2,0,0" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- Подписка -->
+        <StackPanel Grid.Row="3" Margin="0,0,0,12">
+            <TextBlock Style="{StaticResource SectionHeader}" Text="ПОДПИСКА" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0" x:Name="SubscriptionUrl"
+                         VerticalContentAlignment="Center" />
+                <Button Grid.Column="1" x:Name="LoadButton" Content="Загрузить"
+                        Margin="8,0,0,0" Click="OnLoadClick" />
+            </Grid>
+        </StackPanel>
+
+        <!-- Серверы -->
+        <StackPanel Grid.Row="4">
+            <TextBlock Style="{StaticResource SectionHeader}" Text="СЕРВЕРЫ" />
+            <ListBox x:Name="ServerList"
+                     Background="{StaticResource SurfaceBrush}"
+                     Foreground="{StaticResource TextBrush}"
+                     BorderBrush="{StaticResource OutlineBrush}"
+                     BorderThickness="1"
+                     SelectionChanged="OnServerSelected">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="4">
+                            <TextBlock Text="{Binding Name}" FontSize="13" />
+                            <TextBlock Text="{Binding TransportLabel}" FontSize="11"
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </StackPanel>
+
+        <TextBlock Grid.Row="5" x:Name="ErrorText" Foreground="{StaticResource DangerBrush}"
+                   FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" />
+    </Grid>
+</Window>
