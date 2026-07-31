@@ -1,6 +1,9 @@
 //! Запуск системных программ без мелькающих чёрных окон.
 
+use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
+use std::sync::{Mutex, OnceLock};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -51,4 +54,49 @@ pub fn powershell(script: &str) -> Option<String> {
     } else {
         Some(text)
     }
+}
+
+/// Куда писать журнал. Задаётся один раз при запуске приложения.
+static LOG_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+pub fn set_log_path(path: PathBuf) {
+    let cell = LOG_PATH.get_or_init(|| Mutex::new(None));
+    *cell.lock().unwrap() = Some(path);
+}
+
+/// Запись в журнал. Без него причина отказа видна только на машине
+/// пользователя и только на словах — а слов обычно не хватает.
+pub fn log(message: &str) {
+    let cell = match LOG_PATH.get() {
+        Some(cell) => cell,
+        None => return,
+    };
+    let path = match cell.lock().unwrap().clone() {
+        Some(path) => path,
+        None => return,
+    };
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
+/// Файл для вывода запускаемой программы. Ядро и мост объясняют свои
+/// отказы только в вывод, и без него отказ выглядит как молчание.
+pub fn log_file(path: &std::path::Path) -> Stdio {
+    match std::fs::File::create(path) {
+        Ok(file) => Stdio::from(file),
+        Err(_) => Stdio::null(),
+    }
+}
+
+/// Ждёт, пока по адресу начнут принимать соединения.
+pub fn wait_for_port(port: u16, timeout: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    false
 }

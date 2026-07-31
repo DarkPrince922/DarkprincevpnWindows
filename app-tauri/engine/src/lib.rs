@@ -17,7 +17,6 @@ pub mod tun;
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
-use std::thread::sleep;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -82,7 +81,15 @@ impl Vpn {
             return Err("режим «весь трафик» требует запуска от имени администратора".into());
         }
 
+        sys::log(&format!(
+            "подключение: сервер «{}», режим {}",
+            server.name,
+            if mode == Mode::Tun { "весь трафик" } else { "прокси" }
+        ));
         let result = self.bring_up(server, mode);
+        if let Err(error) = &result {
+            sys::log(&format!("отказ: {error}"));
+        }
         match result {
             Ok(()) => {
                 self.state = State::Connected;
@@ -101,8 +108,12 @@ impl Vpn {
             Mode::Proxy => proxy::enable(config::HTTP_PORT)?,
             Mode::Tun => {
                 let bridge = self.core_dir.join("tun2socks.exe");
-                self.tunnel
-                    .start(&bridge, &[server.address.clone()], config::SOCKS_PORT)?;
+                self.tunnel.start(
+                    &bridge,
+                    &[server.address.clone()],
+                    config::SOCKS_PORT,
+                    &self.data_dir,
+                )?;
             }
         }
         Ok(())
@@ -110,6 +121,7 @@ impl Vpn {
 
     fn start_xray(&mut self, server: &Server) -> Result<(), String> {
         let core = self.core_dir.join("xray.exe");
+        sys::log(&format!("ядро: {}", core.display()));
         if !core.exists() {
             return Err(format!(
                 "не найдено ядро Xray: {}. Переустановите приложение.",
@@ -121,22 +133,31 @@ impl Vpn {
         let config_path = self.data_dir.join("xray-config.json");
         std::fs::write(&config_path, config::build(&server.raw_config)?)
             .map_err(|error| format!("не удалось сохранить конфиг ядра: {error}"))?;
+        sys::log(&format!("конфиг: {}", config_path.display()));
 
-        let mut child = sys::command(&core.to_string_lossy())
+        // вывод ядра — в файл: свои отказы оно объясняет только там
+        let log_path = self.data_dir.join("xray.log");
+        let child = sys::command(&core.to_string_lossy())
             .args(["run", "-c", &config_path.to_string_lossy()])
             .current_dir(&self.core_dir)
             .env("XRAY_LOCATION_ASSET", &self.core_dir)
-            .stdout(Stdio::null())
+            .stdout(sys::log_file(&log_path))
             .stderr(Stdio::null())
             .spawn()
             .map_err(|error| format!("не удалось запустить ядро: {error}"))?;
-
-        // ядро падает сразу, если конфиг не принят, — даём ему мгновение
-        sleep(Duration::from_millis(700));
-        if matches!(child.try_wait(), Ok(Some(_))) {
-            return Err("ядро завершилось сразу после запуска — конфиг сервера не принят".into());
-        }
         self.xray = Some(child);
+
+        // Мало запустить — надо дождаться, пока ядро начнёт принимать
+        // соединения. Без этой проверки сломанный конфиг выглядел бы как
+        // успешное подключение, у которого просто «не работает интернет».
+        if !sys::wait_for_port(config::SOCKS_PORT, Duration::from_secs(6)) {
+            let tail = tail_of(&log_path);
+            sys::log(&format!("ядро не открыло порт. Хвост журнала:\n{tail}"));
+            return Err(format!(
+                "ядро не приняло конфиг сервера и не открыло порт.\n{tail}"
+            ));
+        }
+        sys::log("ядро слушает порт");
         Ok(())
     }
 
@@ -166,4 +187,17 @@ impl Drop for Vpn {
     fn drop(&mut self) {
         self.disconnect();
     }
+}
+
+fn tail_of(path: &Path) -> String {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty()).collect();
+    lines
+        .iter()
+        .rev()
+        .take(4)
+        .rev()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n")
 }

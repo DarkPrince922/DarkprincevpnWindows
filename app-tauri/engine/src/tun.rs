@@ -29,7 +29,13 @@ impl Tunnel {
         Self { process: None, server_routes: Vec::new(), default_routes: false }
     }
 
-    pub fn start(&mut self, bridge: &Path, servers: &[String], socks_port: u16) -> Result<(), String> {
+    pub fn start(
+        &mut self,
+        bridge: &Path,
+        servers: &[String],
+        socks_port: u16,
+        log_dir: &Path,
+    ) -> Result<(), String> {
         if !bridge.exists() {
             return Err(format!(
                 "не найден мост tun2socks: {}. Переустановите приложение.",
@@ -43,6 +49,7 @@ impl Tunnel {
 
         let gateway = default_gateway()
             .ok_or("не удалось определить основной шлюз — проверьте подключение к сети")?;
+        sys::log(&format!("шлюз: {gateway}"));
 
         // 1. Маршруты до серверов мимо туннеля, пока DNS ещё прямой
         for ip in resolve(servers) {
@@ -52,6 +59,7 @@ impl Tunnel {
                 self.server_routes.push(ip);
             }
         }
+        sys::log(&format!("маршруты до серверов: {:?}", self.server_routes));
         if self.server_routes.is_empty() {
             return Err("не удалось проложить маршрут до сервера. Без него весь трафик, \
 включая трафик самого ядра, ушёл бы в туннель и соединение зациклилось бы."
@@ -71,7 +79,7 @@ impl Tunnel {
             ])
             .current_dir(bridge.parent().unwrap_or(Path::new(".")))
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(sys::log_file(&log_dir.join("tun2socks.log")))
             .spawn()
             .map_err(|error| format!("не удалось запустить мост: {error}"))?;
         self.process = Some(child);
@@ -80,13 +88,18 @@ impl Tunnel {
         let index = match self.wait_for_adapter(Duration::from_secs(12)) {
             Some(index) => index,
             None => {
+                let tail = std::fs::read_to_string(log_dir.join("tun2socks.log"))
+                    .unwrap_or_default();
+                let tail: String = tail.lines().rev().take(3).collect::<Vec<_>>().join(" ");
                 self.stop();
-                return Err("виртуальный адаптер не появился. Проверьте, что рядом с \
-приложением лежит wintun.dll."
-                    .into());
+                return Err(format!(
+                    "виртуальный адаптер не появился. Проверьте, что рядом с приложением \
+лежит wintun.dll. {tail}"
+                ));
             }
         };
 
+        sys::log(&format!("адаптер поднят, индекс {index}"));
         sys::run("netsh", &["interface", "ip", "set", "address",
                             &format!("name={ADAPTER}"), "static", ADDRESS, MASK]);
         sys::run("netsh", &["interface", "ip", "set", "dns",

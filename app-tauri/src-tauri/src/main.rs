@@ -213,6 +213,14 @@ fn main() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
 
+            std::fs::create_dir_all(&data_dir).ok();
+            dp_engine::sys::set_log_path(data_dir.join("app.log"));
+            dp_engine::sys::log(&format!(
+                "--- запуск {} ---\nядро ищем в {}",
+                env!("CARGO_PKG_VERSION"),
+                core_dir.display()
+            ));
+
             // следы прошлого запуска, если его завершили жёстко
             Vpn::clear_stale_state(&core_dir);
 
