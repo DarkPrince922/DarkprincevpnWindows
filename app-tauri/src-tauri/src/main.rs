@@ -224,8 +224,7 @@ fn os_version() -> String {
 /// только прячет приложение в панель задач.
 fn quit(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<App>() {
-        let vpn = Arc::clone(&state.vpn);
-        if let Ok(mut vpn) = vpn.lock() {
+        if let Ok(mut vpn) = state.vpn.lock() {
             vpn.disconnect();
         }
     }
