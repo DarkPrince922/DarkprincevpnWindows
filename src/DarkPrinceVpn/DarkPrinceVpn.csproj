@@ -16,6 +16,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <!-- ядро и мост лежат рядом с exe, внутрь файла их не упаковываем -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- отладочные данные внутри exe: без них в журнале ошибок нет ни файлов,
+         ни номеров строк, и разбирать жалобы пользователей нечем -->
+    <DebugType>embedded</DebugType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
