@@ -30,7 +30,15 @@ public sealed class TunManager : IDisposable
     private Process? _process;
     private readonly List<string> _serverRoutes = new();
     private bool _defaultRoutesAdded;
-    private string? _gateway;
+
+    private readonly Queue<string> _log = new();
+    private const int LogLimit = 100;
+
+    /// <summary>Последние строки моста — показываем их при ошибке.</summary>
+    public IReadOnlyList<string> RecentLog
+    {
+        get { lock (_log) return _log.ToList(); }
+    }
 
     public static string ExecutablePath =>
         Path.Combine(AppPaths.CoreDirectory, "tun2socks.exe");
@@ -51,10 +59,13 @@ public sealed class TunManager : IDisposable
                 "Режим TUN требует запуска от имени администратора.");
         }
 
+        // прошлый запуск мог быть снят жёстко: тогда в системе остались наши
+        // маршруты и чужой мост, и новый туннель поднимался бы поверх них
+        ClearStaleState();
+
         var (gateway, _) = FindDefaultRoute()
             ?? throw new InvalidOperationException(
                 "Не удалось определить основной шлюз — проверьте подключение к сети.");
-        _gateway = gateway;
 
         // 1. Маршруты до серверов мимо туннеля — пока DNS ещё прямой
         foreach (var ip in ResolveServers(profile))
@@ -80,18 +91,31 @@ public sealed class TunManager : IDisposable
                 $"-device tun://{AdapterName} " +
                 $"-proxy socks5://127.0.0.1:{XrayConfigBuilder.SocksPort} " +
                 "-loglevel warning",
+            // wintun.dll лежит рядом с мостом
+            WorkingDirectory = AppPaths.CoreDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardError = true,
         };
-        _process = new Process { StartInfo = info };
+        _process = new Process { StartInfo = info, EnableRaisingEvents = true };
+        // вывод обязательно вычитывать: заполненный буфер трубы останавливает
+        // мост намертво, и туннель просто перестаёт пропускать пакеты
+        _process.ErrorDataReceived += (_, e) => Append(e.Data);
         _process.Start();
+        ChildProcessJob.Attach(_process);
+        _process.BeginErrorReadLine();
 
         // 3. Адаптер появляется не мгновенно — ждём его и настраиваем
-        var adapter = WaitForAdapter(TimeSpan.FromSeconds(12))
-            ?? throw new InvalidOperationException(
+        var adapter = WaitForAdapter(TimeSpan.FromSeconds(12));
+        if (adapter is null)
+        {
+            var tail = string.Join(Environment.NewLine, RecentLog.TakeLast(5));
+            Stop();
+            throw new InvalidOperationException(
                 "Виртуальный адаптер не появился. Проверьте, что рядом с " +
-                "приложением лежит wintun.dll.");
+                "приложением лежит wintun.dll." +
+                (tail.Length > 0 ? Environment.NewLine + tail : ""));
+        }
 
         Run("netsh", $"interface ip set address name=\"{AdapterName}\" " +
                      $"static {TunAddress} {TunMask}");
@@ -127,7 +151,6 @@ public sealed class TunManager : IDisposable
             Run("route", $"delete {ip} mask 255.255.255.255");
         }
         _serverRoutes.Clear();
-        _gateway = null;
 
         if (_process is null) return;
         try
@@ -145,6 +168,43 @@ public sealed class TunManager : IDisposable
         {
             _process.Dispose();
             _process = null;
+        }
+    }
+
+    private void Append(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        lock (_log)
+        {
+            _log.Enqueue(line);
+            while (_log.Count > LogLimit) _log.Dequeue();
+        }
+    }
+
+    /// <summary>
+    /// Следы предыдущего запуска, оборванного не по-хорошему: наши половинки
+    /// маршрута по умолчанию и осиротевший мост. Пока они на месте, трафик
+    /// уходит в несуществующий туннель и сеть выглядит «мёртвой».
+    /// </summary>
+    public static void ClearStaleState()
+    {
+        Run("route", $"delete 0.0.0.0 mask 128.0.0.0 {TunAddress}");
+        Run("route", $"delete 128.0.0.0 mask 128.0.0.0 {TunAddress}");
+
+        foreach (var process in Process.GetProcessesByName("tun2socks"))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(3000);
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                process.Dispose();
+            }
         }
     }
 
@@ -209,11 +269,14 @@ public sealed class TunManager : IDisposable
         return null;
     }
 
-    private static NetworkInterface? WaitForAdapter(TimeSpan timeout)
+    private NetworkInterface? WaitForAdapter(TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
+            // мост мог упасть на старте — тогда ждать нечего
+            if (_process is { HasExited: true }) return null;
+
             var adapter = NetworkInterface.GetAllNetworkInterfaces()
                 .FirstOrDefault(nic => nic.Name == AdapterName);
             if (adapter is not null) return adapter;

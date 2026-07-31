@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,6 +23,7 @@ public partial class MainWindow : Window
     private bool _registerMode;
     private CancellationTokenSource? _telegramPolling;
     private bool _updatingPicker;
+    private bool _closing;
 
     public MainWindow()
     {
@@ -30,17 +32,47 @@ public partial class MainWindow : Window
         DarkTitleBar.Apply(this, Color.FromRgb(0x0A, 0x0E, 0x17));
 
         _vpn.Changed += () => Dispatcher.Invoke(RenderVpn);
-        Closing += (_, _) =>
-        {
-            _telegramPolling?.Cancel();
-            _vpn.Dispose();
-        };
+        Closing += OnClosing;
 
         ModeTun.IsChecked = _store.TunMode;
         ModeProxy.IsChecked = !_store.TunMode;
 
         if (_auth.IsLoggedIn) ShowMain();
         RenderVpn();
+
+        // следы прошлого запуска, если его завершили жёстко
+        if (TunManager.IsElevated()) Task.Run(TunManager.ClearStaleState);
+    }
+
+    /// <summary>
+    /// Закрытие окна. Снятие туннеля — это вызовы route и netsh, каждый из
+    /// которых может думать секунды; на потоке интерфейса окно бы зависло, а
+    /// без ограничения по времени задача осталась бы висеть в диспетчере.
+    /// Поэтому окно прячем сразу, работу делаем фоном и в любом случае
+    /// выходим.
+    /// </summary>
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (_closing) return;
+        _closing = true;
+        _telegramPolling?.Cancel();
+
+        e.Cancel = true;
+        Hide();
+
+        var teardown = Task.Run(() =>
+        {
+            try
+            {
+                _vpn.Dispose();
+            }
+            catch (Exception)
+            {
+            }
+        });
+
+        _ = Task.WhenAny(teardown, Task.Delay(TimeSpan.FromSeconds(10)))
+            .ContinueWith(_ => Environment.Exit(0));
     }
 
     // ================= Вход =================
@@ -250,7 +282,7 @@ public partial class MainWindow : Window
         if (SubscriptionPicker.SelectedItem is not SubscriptionListItem item) return;
 
         _store.SelectedSubscriptionId = item.Id;
-        if (_vpn.State != VpnState.Disconnected) _vpn.Disconnect();
+        if (_vpn.State != VpnState.Disconnected) await _vpn.DisconnectAsync();
 
         if (_subscriptions.CachedServers(item.Id) is { } cached) ShowServers(cached);
         await LoadServersAsync(force: true);
@@ -264,23 +296,25 @@ public partial class MainWindow : Window
         StatusBar.Text = "";
     }
 
-    private void OnServerSelected(object sender, SelectionChangedEventArgs e)
+    private async void OnServerSelected(object sender, SelectionChangedEventArgs e)
     {
         if (ServerList.SelectedItem is not ProxyProfile profile) return;
         _selected = profile;
         _store.SetSelectedServer(_store.SelectedSubscriptionId, ServerList.SelectedIndex);
-        // при поднятом туннеле сразу переключаемся на выбранный узел
-        if (_vpn.State != VpnState.Disconnected) _vpn.SwitchServer(profile);
         RenderVpn();
+        // при поднятом туннеле сразу переключаемся на выбранный узел
+        if (_vpn.State != VpnState.Disconnected) await _vpn.SwitchServerAsync(profile);
     }
 
     // ================= Подключение =================
 
-    private void OnPowerClick(object sender, RoutedEventArgs e)
+    private async void OnPowerClick(object sender, RoutedEventArgs e)
     {
+        if (_vpn.IsBusy) return;
+
         if (_vpn.State != VpnState.Disconnected)
         {
-            _vpn.Disconnect();
+            await _vpn.DisconnectAsync();
             return;
         }
 
@@ -302,7 +336,7 @@ public partial class MainWindow : Window
         }
 
         HomeError.Text = "";
-        _vpn.Connect(_selected, mode);
+        await _vpn.ConnectAsync(_selected, mode);
     }
 
     private void RenderVpn()
@@ -321,16 +355,23 @@ public partial class MainWindow : Window
                 PowerRing.Stroke = gold;
                 break;
             case VpnState.Connecting:
-                StateText.Text = "Подключение…";
+                StateText.Text = _vpn.Mode == VpnMode.Tun
+                    ? "Поднимаю туннель… это занимает несколько секунд"
+                    : "Подключение…";
                 PowerIcon.Foreground = muted;
                 PowerRing.Stroke = muted;
                 break;
             default:
-                StateText.Text = "Нажмите для подключения";
+                StateText.Text = _vpn.IsBusy
+                    ? "Отключение…"
+                    : "Нажмите для подключения";
                 PowerIcon.Foreground = muted;
                 PowerRing.Stroke = outline;
                 break;
         }
+
+        // пока идёт работа, повторные нажатия только запутают состояние
+        PowerButton.IsEnabled = !_vpn.IsBusy;
 
         SelectedServerText.Text = _selected is null
             ? "Сервер не выбран"
@@ -466,7 +507,7 @@ public partial class MainWindow : Window
 
     private async void OnLogout(object sender, RoutedEventArgs e)
     {
-        _vpn.Disconnect();
+        await _vpn.DisconnectAsync();
         await _auth.LogoutAsync();
         MainPanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Visible;

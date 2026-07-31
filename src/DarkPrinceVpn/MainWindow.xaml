@@ -70,7 +70,8 @@
                                 <Ellipse x:Name="PowerRing" Width="176" Height="176"
                                          Stroke="{StaticResource OutlineBrush}" StrokeThickness="2"
                                          Fill="{StaticResource SurfaceBrush}" />
-                                <Button Width="176" Height="176" Background="Transparent"
+                                <Button x:Name="PowerButton" Width="176" Height="176"
+                                        Background="Transparent"
                                         BorderThickness="0" Click="OnPowerClick">
                                     <TextBlock x:Name="PowerIcon" Text="⏻" FontSize="60"
                                                Foreground="{StaticResource SecondaryTextBrush}" />

@@ -57,6 +57,8 @@ public sealed class XrayProcess : IDisposable
         _process.ErrorDataReceived += (_, e) => Append(e.Data);
 
         _process.Start();
+        // если приложение снимут через диспетчер задач, ядро уйдёт вместе с ним
+        ChildProcessJob.Attach(_process);
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
 
