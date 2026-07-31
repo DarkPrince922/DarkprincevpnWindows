@@ -28,7 +28,8 @@ jobs:
         run: dotnet publish src/DarkPrinceVpn/DarkPrinceVpn.csproj -c Release -o publish
 
       - name: Скачать ядро и мост
-        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-cores.ps1 -OutputDirectory publish/core
+        shell: pwsh
+        run: ./scripts/fetch-cores.ps1 -OutputDirectory publish/core
 
       - name: Проверить состав сборки
         shell: pwsh
