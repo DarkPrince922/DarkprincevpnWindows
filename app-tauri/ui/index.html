@@ -26,17 +26,6 @@
         </button>
     </header>
 
-    <!-- Полоса обновления. Показывается поверх обеих страниц: обновиться
-         можно и не входя в аккаунт. -->
-    <div class="update-bar hidden" id="updateBar">
-        <div class="update-text">
-            <b id="updateTitle">Вышло обновление</b>
-            <span class="tiny muted" id="updateHint"></span>
-        </div>
-        <button class="primary small" id="updateAction">Обновить</button>
-        <button class="ghost small" id="updateHide" title="Скрыть">✕</button>
-    </div>
-
     <main>
         <!-- ================= ВХОД ================= -->
         <section id="auth">
@@ -203,6 +192,22 @@
             <button class="primary block" id="exitHide">Свернуть в трей</button>
             <button class="danger block" id="exitQuit">Выйти полностью</button>
             <button class="ghost small block" id="exitCancel">Отмена</button>
+        </div>
+    </div>
+
+    <!-- ================= ОБНОВЛЕНИЕ ================= -->
+    <div class="modal hidden" id="updateAsk">
+        <div class="dialog">
+            <div class="update-mark">↑</div>
+            <h3 id="updateTitle">Вышло обновление</h3>
+            <p class="tiny muted" id="updateNotes"></p>
+
+            <!-- полоса закачки: появляется, когда нажали «Обновить» -->
+            <div class="bar hidden" id="updateBar"><i id="updateFill" style="width:0%"></i></div>
+            <p class="tiny muted hidden" id="updateProgress"></p>
+
+            <button class="primary block" id="updateNow">Обновить</button>
+            <button class="ghost small block" id="updateLater">Не сейчас</button>
         </div>
     </div>
 

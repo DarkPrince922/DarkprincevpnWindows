@@ -759,6 +759,19 @@ function daysUntil(endDate) {
 // запускают часто, а манифест отдаётся без кеша и всегда свежий.
 const UPDATE_EVERY = 6 * 60 * 60 * 1000;
 
+const megabytes = (bytes) => `${(bytes / 1048576).toFixed(1)} МБ`;
+
+// Полосу закачки рисует Rust: он шлёт событие на каждый кусок. Подписываемся
+// один раз при старте, а не на каждое нажатие, иначе обработчики копились бы.
+window.__TAURI__.event.listen("update-progress", ({ payload }) => {
+    const { downloaded, total } = payload;
+    $("#updateProgress").textContent = total
+        ? `${megabytes(downloaded)} из ${megabytes(total)}`
+        : megabytes(downloaded);
+    // размер известен не всегда — тогда показываем только числа
+    if (total) $("#updateFill").style.width = `${Math.min(100, (downloaded / total) * 100)}%`;
+});
+
 async function checkUpdate() {
     let info;
     try {
@@ -767,45 +780,55 @@ async function checkUpdate() {
         return; // проверка обновлений не должна мешать работать
     }
     if (!info || info.failed || !info.version) return;
-
-    const bar = $("#updateBar");
-    // не мозолим глаза той же версией, если её уже закрыли
+    // не показываем окно повторно, если от этой версии уже отказались
     if (store.updateHidden === info.version) return;
 
     $("#updateTitle").textContent = `Вышла версия ${info.version}`;
-    const action = $("#updateAction");
+    const now = $("#updateNow");
+    const later = $("#updateLater");
 
     if (info.can_install) {
-        $("#updateHint").textContent = "Обновление скачается и поставится само";
-        action.textContent = "Обновить";
-        action.classList.remove("hidden");
-        action.onclick = async () => {
-            action.disabled = true;
-            action.textContent = "Обновляю…";
-            try {
-                // при удаче приложение перезапустится и сюда не вернётся
-                await invoke("install_update");
-            } catch (error) {
-                action.disabled = false;
-                action.textContent = "Обновить";
-                $("#updateHint").textContent = String(error);
-            }
-        };
+        $("#updateNotes").textContent = info.notes
+            || "Приложение скачает и поставит обновление само.";
+        now.classList.remove("hidden");
+        now.onclick = () => startUpdate(now, later);
     } else if (info.command) {
         // Пакет принадлежит пакетному менеджеру: сами не лезем, показываем чем
-        $("#updateHint").textContent = info.command;
-        action.classList.add("hidden");
+        $("#updateNotes").innerHTML =
+            `Приложение установлено пакетом, поэтому обновляет его система:<br>` +
+            `<span class="mono">${info.command}</span>`;
+        now.classList.add("hidden");
     } else {
         // сборка из исходников — сказать про версию можно, советовать нечего
-        $("#updateHint").textContent = "";
-        action.classList.add("hidden");
+        $("#updateNotes").textContent = "Приложение собрано из исходников.";
+        now.classList.add("hidden");
     }
 
-    $("#updateHide").onclick = () => {
+    later.onclick = () => {
         store.updateHidden = info.version;
-        bar.classList.add("hidden");
+        $("#updateAsk").classList.add("hidden");
     };
-    bar.classList.remove("hidden");
+    $("#updateAsk").classList.remove("hidden");
+}
+
+async function startUpdate(now, later) {
+    now.disabled = true;
+    later.disabled = true;
+    now.textContent = "Обновляю…";
+    $("#updateBar").classList.remove("hidden");
+    $("#updateProgress").classList.remove("hidden");
+
+    try {
+        // при удаче приложение перезапустится и сюда не вернётся
+        await invoke("install_update");
+    } catch (error) {
+        now.disabled = false;
+        later.disabled = false;
+        now.textContent = "Повторить";
+        $("#updateBar").classList.add("hidden");
+        $("#updateProgress").classList.add("hidden");
+        $("#updateNotes").textContent = String(error);
+    }
 }
 
 // ================= старт =================
