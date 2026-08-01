@@ -168,4 +168,18 @@ const api = {
     subscriptions: () => request("cabinet/subscriptions"),
     subscription: () => request("cabinet/subscription"),
     connectionLink: () => request("cabinet/subscription/connection-link"),
+
+    // --- тарифы, продление, баланс ---
+    // Те же адреса, что у кабинета на сайте. Считает всё сервер: приложение
+    // показывает варианты и отправляет выбор, цен само не выдумывает.
+    purchaseOptions: () => request("cabinet/subscription/purchase-options"),
+    purchaseTariff: (tariffId, periodDays) =>
+        request("cabinet/subscription/purchase-tariff", {
+            method: "POST",
+            body: { tariff_id: tariffId, period_days: periodDays },
+        }),
+    renewalOptions: () => request("cabinet/subscription/renewal-options"),
+    renew: (periodDays) =>
+        request("cabinet/subscription/renew", { method: "POST", body: { period_days: periodDays } }),
+    balance: () => request("cabinet/balance"),
 };

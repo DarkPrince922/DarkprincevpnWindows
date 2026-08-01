@@ -9,9 +9,15 @@ const state = {
     selected: 0,
     tun: localStorage.getItem("dp_tun") === "1",
     subscription: null,
+    subscriptions: [],
+    subIndex: 0,
+    balanceKopeks: null,
     busy: false,
     connected: false,
 };
+
+const money = (kopeks) =>
+    `${(Number(kopeks || 0) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
 
 // ================= окно =================
 
@@ -48,6 +54,7 @@ $("#exitAsk").addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!$("#exitAsk").classList.contains("hidden")) closeAsk();
+    else if (!$("#pickSheet").classList.contains("hidden")) $("#pickSheet").classList.add("hidden");
     else if (!$("#sheet").classList.contains("hidden")) $("#sheet").classList.add("hidden");
 });
 
@@ -209,16 +216,33 @@ async function enter() {
 
 async function loadSubscription() {
     message($("#homeMessage"), "");
+    loadBalance(); // не ждём: баланс не мешает подключению
     try {
         const data = await api.subscriptions();
         const list = Array.isArray(data.subscriptions) ? data.subscriptions : [];
-        let current = list.find(isActive) || list[0] || null;
+
+        // Подписок может быть несколько. Раньше бралась первая активная, а
+        // остальные пропадали молча — человек с двумя тарифами видел один и
+        // не понимал, куда делся второй.
+        state.subscriptions = list;
+        if (state.subIndex >= list.length) state.subIndex = 0;
+        if (!list.some(isActive)) state.subIndex = 0;
+        else if (!isActive(list[state.subIndex])) {
+            state.subIndex = list.findIndex(isActive);
+        }
+
+        let current = list[state.subIndex] || null;
         if (!current) {
             const single = await api.subscription().catch(() => null);
-            if (single && (single.id || single.subscription_url)) current = single;
+            if (single && (single.id || single.subscription_url)) {
+                current = single;
+                state.subscriptions = [single];
+                state.subIndex = 0;
+            }
         }
         state.subscription = current;
         renderSubscription();
+        renderSubSwitcher();
 
         let url = current?.subscription_url;
         if (!url) {
@@ -238,6 +262,213 @@ async function loadSubscription() {
 
 const isActive = (sub) =>
     ["active", "trial"].includes(String(sub.status || "").toLowerCase()) || sub.is_active === true;
+
+const subTitle = (sub) =>
+    sub.tariff_name || (sub.is_trial ? "Пробная подписка" : `Подписка №${sub.id ?? "—"}`);
+
+// ================= несколько подписок =================
+
+function renderSubSwitcher() {
+    const many = state.subscriptions.length > 1;
+    $("#subSwitcher").classList.toggle("hidden", !many);
+    if (!many) return;
+
+    const sub = state.subscription;
+    $("#subPickName").textContent = sub ? subTitle(sub) : "—";
+    $("#subPickHint").textContent = `подписок: ${state.subscriptions.length} · нажмите, чтобы переключить`;
+}
+
+$("#subPick").addEventListener("click", () => {
+    openPicker(
+        "Ваши подписки",
+        state.subscriptions.map((sub, index) => ({
+            title: subTitle(sub),
+            subtitle: isActive(sub)
+                ? `активна${sub.end_date ? ` · ${daysUntil(sub.end_date)} дн.` : ""}`
+                : "неактивна",
+            selected: index === state.subIndex,
+        })),
+        async (index) => {
+            if (index === state.subIndex) return;
+            state.subIndex = index;
+            // серверы принадлежат подписке: переключились — перечитываем
+            if (state.connected) await disconnectNow();
+            await loadSubscription();
+        }
+    );
+});
+
+// ================= общий выбор =================
+
+function openPicker(title, items, onPick, note) {
+    $("#pickTitle").textContent = title;
+    message($("#pickMessage"), note || "", "info");
+    const list = $("#pickList");
+    list.innerHTML = "";
+
+    items.forEach((item, index) => {
+        const button = document.createElement("button");
+        button.className = "server";
+        button.setAttribute("aria-selected", String(Boolean(item.selected)));
+        button.innerHTML =
+            `<span class="grow"><span class="ellipsis" style="display:block">${escape(item.title)}</span>` +
+            `<span class="tiny muted">${escape(item.subtitle || "")}</span></span>` +
+            (item.right ? `<span class="gold">${escape(item.right)}</span>` : "");
+        button.addEventListener("click", async () => {
+            $("#pickSheet").classList.add("hidden");
+            await onPick(index);
+        });
+        list.append(button);
+    });
+
+    if (!items.length) {
+        const empty = document.createElement("p");
+        empty.className = "tiny muted";
+        empty.style.padding = "4px 4px 10px";
+        empty.textContent = "Вариантов нет.";
+        list.append(empty);
+    }
+    $("#pickSheet").classList.remove("hidden");
+}
+
+$("#pickSheet").addEventListener("click", (event) => {
+    if (event.target === $("#pickSheet")) $("#pickSheet").classList.add("hidden");
+});
+
+// ================= баланс, тарифы, продление =================
+
+async function loadBalance() {
+    try {
+        const data = await api.balance();
+        state.balanceKopeks = data.balance_kopeks ?? data.balance ?? null;
+        $("#balanceValue").textContent =
+            state.balanceKopeks === null ? "—" : money(state.balanceKopeks);
+    } catch {
+        $("#balanceValue").textContent = "—";
+    }
+}
+
+// Пополнение уводим в кабинет намеренно: у платёжных систем свои страницы
+// с переадресациями и подтверждениями, и тащить их в окно приложения —
+// значит отвечать за чужой платёжный процесс.
+$("#topup").addEventListener("click", () =>
+    invoke("open_url", { url: "https://dprince.online/cabinet.html#balance" })
+);
+
+$("#openTariffs").addEventListener("click", async () => {
+    let options;
+    try {
+        options = await api.purchaseOptions();
+    } catch (error) {
+        message($("#homeMessage"), error.message);
+        return;
+    }
+    const tariffs = options.tariffs || options.items || [];
+    if (!tariffs.length) {
+        message(
+            $("#homeMessage"),
+            "Сменить тариф сейчас не на что. Возможны ограничения: понижение тарифа может быть "
+            + "выключено, а тарифы, на которые подписка уже есть, не предлагаются."
+        );
+        return;
+    }
+
+    openPicker(
+        "Выберите тариф",
+        tariffs.map((tariff) => ({
+            title: tariff.name || `Тариф №${tariff.id}`,
+            subtitle: tariffHint(tariff),
+        })),
+        (index) => pickPeriod(tariffs[index]),
+        state.balanceKopeks === null ? "" : `На балансе ${money(state.balanceKopeks)}`
+    );
+});
+
+function tariffHint(tariff) {
+    const parts = [];
+    const traffic = tariff.traffic_limit_gb;
+    if (traffic === 0 || traffic === null) parts.push("трафик без ограничений");
+    else if (traffic) parts.push(`${traffic} ГБ`);
+    if (tariff.device_limit) parts.push(`${tariff.device_limit} устр.`);
+    return parts.join(" · ");
+}
+
+/// Сроки и цены приходят с сервера — сами ничего не считаем.
+function periodsOf(item) {
+    const raw = item.periods || item.period_prices || item.prices || {};
+    return Object.entries(raw)
+        .map(([days, price]) => ({ days: Number(days), price: Number(price) }))
+        .filter((period) => Number.isFinite(period.days) && period.days > 0)
+        .sort((a, b) => a.days - b.days);
+}
+
+async function pickPeriod(tariff) {
+    const periods = periodsOf(tariff);
+    if (!periods.length) {
+        message($("#homeMessage"), `У тарифа «${tariff.name}» не задано ни одного срока.`);
+        return;
+    }
+    openPicker(
+        `Срок · ${tariff.name}`,
+        periods.map((period) => ({
+            title: `${period.days} ${plural(period.days, "день", "дня", "дней")}`,
+            subtitle: state.balanceKopeks !== null && period.price > state.balanceKopeks
+                ? "не хватает на балансе"
+                : "спишется с баланса",
+            right: money(period.price),
+        })),
+        async (index) => {
+            const period = periods[index];
+            await buy(() => api.purchaseTariff(tariff.id, period.days), "Тариф изменён.");
+        },
+        state.balanceKopeks === null ? "" : `На балансе ${money(state.balanceKopeks)}`
+    );
+}
+
+$("#renewButton").addEventListener("click", async () => {
+    let options;
+    try {
+        options = await api.renewalOptions();
+    } catch (error) {
+        message($("#homeMessage"), error.message);
+        return;
+    }
+    const periods = periodsOf(options);
+    if (!periods.length) {
+        message($("#homeMessage"), "Продлевать нечего: сроков для текущего тарифа не предлагается.");
+        return;
+    }
+    openPicker(
+        "На сколько продлить",
+        periods.map((period) => ({
+            title: `${period.days} ${plural(period.days, "день", "дня", "дней")}`,
+            subtitle: state.balanceKopeks !== null && period.price > state.balanceKopeks
+                ? "не хватает на балансе"
+                : "спишется с баланса",
+            right: money(period.price),
+        })),
+        async (index) => {
+            await buy(() => api.renew(periods[index].days), "Подписка продлена.");
+        },
+        state.balanceKopeks === null ? "" : `На балансе ${money(state.balanceKopeks)}`
+    );
+});
+
+/// Общая часть покупки: платит сервер, мы показываем итог и перечитываем
+/// состояние. Ошибку показываем как есть — в ней написана причина отказа,
+/// чаще всего нехватка денег.
+async function buy(action, successText) {
+    message($("#homeMessage"), "Отправляю…", "info");
+    try {
+        await action();
+        // Порядок важен: loadSubscription чистит сообщения, поэтому итог
+        // пишется после неё, иначе он гаснет сразу же после появления.
+        await loadSubscription();
+        message($("#homeMessage"), successText, "info");
+    } catch (error) {
+        message($("#homeMessage"), error.message);
+    }
+}
 
 // Идентификатор этого компьютера для учёта в панели. Живёт один на
 // установку: переустановка приложения не должна съедать ещё одно место

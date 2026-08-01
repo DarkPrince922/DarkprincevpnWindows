@@ -98,6 +98,20 @@
             </div>
 
             <p class="section">Подписка</p>
+
+            <!-- Появляется, только если подписок несколько: одну переключать
+                 не с чем, и лишняя строка сбивала бы с толку. -->
+            <div class="card hidden" id="subSwitcher" style="margin-bottom:8px">
+                <button class="pick" id="subPick">
+                    <span class="dot"></span>
+                    <span class="grow">
+                        <span class="ellipsis" id="subPickName" style="display:block"></span>
+                        <span class="tiny muted" id="subPickHint"></span>
+                    </span>
+                    <span class="chev">›</span>
+                </button>
+            </div>
+
             <div class="card" id="subscriptionCard">
                 <div class="row">
                     <div class="grow">
@@ -114,6 +128,21 @@
                 <div class="kv"><span class="k">Устройств по тарифу</span><span id="devices">—</span></div>
             </div>
 
+            <p class="section">Тариф и баланс</p>
+            <div class="card">
+                <div class="row">
+                    <div class="grow">
+                        <div id="balanceValue">—</div>
+                        <div class="tiny muted">на балансе</div>
+                    </div>
+                    <button class="small" id="topup">Пополнить</button>
+                </div>
+                <div class="row" style="margin-top:10px">
+                    <button class="small grow" id="openTariffs">Сменить тариф</button>
+                    <button class="small grow" id="renewButton">Продлить</button>
+                </div>
+            </div>
+
             <div class="row" style="margin-top:4px">
                 <button class="ghost small grow" id="openCabinet">Личный кабинет</button>
                 <button class="ghost small" id="refresh">Обновить</button>
@@ -128,6 +157,18 @@
             <div class="grip"></div>
             <p class="section">Выберите сервер</p>
             <div id="serverList"></div>
+        </div>
+    </div>
+
+    <!-- ================= ОБЩИЙ ВЫБОР ================= -->
+    <!-- Одна панель на три случая: подписки, тарифы, сроки. Разметка у них
+         одинаковая, а три почти одинаковых куска разошлись бы со временем. -->
+    <div class="sheet hidden" id="pickSheet">
+        <div class="panel">
+            <div class="grip"></div>
+            <p class="section" id="pickTitle"></p>
+            <div id="pickMessage" class="msg hidden"></div>
+            <div id="pickList"></div>
         </div>
     </div>
 
