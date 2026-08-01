@@ -40,7 +40,10 @@ jobs:
 
       - name: Собрать
         working-directory: app-tauri/src-tauri
-        run: npx --yes @tauri-apps/cli@^2 build
+        # Обычный CI проверяет приложение и установщик, но не выпускает
+        # обновление. Подписанные updater-артефакты создаёт только release.yml,
+        # где ключ доступен из secrets.
+        run: npx --yes @tauri-apps/cli@^2 build --config tauri.ci.conf.json
 
       - name: Проверить состав сборки
         shell: pwsh
