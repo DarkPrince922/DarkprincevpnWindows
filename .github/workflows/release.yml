@@ -41,6 +41,13 @@ jobs:
         shell: pwsh
         run: ./scripts/fetch-cores.ps1 -OutputDirectory app-tauri/src-tauri/core
 
+      # Версия приложения должна совпасть с тегом: именно её оно сравнивает с
+      # манифестом обновлений. Отстанет — апдейтер будет предлагать одно и то
+      # же обновление по кругу.
+      - name: Проставить версию
+        shell: pwsh
+        run: ./scripts/set-version.ps1 -Version $env:TAG
+
       - name: Собрать
         working-directory: app-tauri/src-tauri
         run: npx --yes @tauri-apps/cli@^2 build
