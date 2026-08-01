@@ -454,6 +454,100 @@ $("#renewButton").addEventListener("click", async () => {
     );
 });
 
+// ================= устройства, промокоды, рефералы =================
+
+$("#openDevices").addEventListener("click", async () => {
+    let data;
+    try {
+        data = await api.devices(state.subscription?.id);
+    } catch (error) {
+        message($("#homeMessage"), error.message);
+        return;
+    }
+    const devices = data.devices || data.items || [];
+    const limit = state.subscription?.device_limit;
+
+    openPicker(
+        "Подключённые устройства",
+        devices.map((device) => ({
+            title: device.device_model || device.name || device.hwid || "Устройство",
+            subtitle: [device.platform || device.device_os, device.last_seen_at || device.updated_at]
+                .filter(Boolean).join(" · ") || "нажмите, чтобы отключить",
+        })),
+        (index) => confirmRemoveDevice(devices[index]),
+        limit ? `Занято ${devices.length} из ${limit}` : ""
+    );
+});
+
+/// Отключение спрашивает подтверждение: место освободится сразу, а вот
+/// заново подключиться человеку придётся руками на самом устройстве.
+function confirmRemoveDevice(device) {
+    const hwid = device.hwid || device.id;
+    const name = device.device_model || device.name || "устройство";
+    if (!hwid) {
+        message($("#homeMessage"), "У этого устройства нет опознавателя — отключить его можно только в кабинете.");
+        return;
+    }
+    openPicker(
+        `Отключить «${name}»?`,
+        [
+            { title: "Отключить", subtitle: "освободит место в лимите тарифа" },
+            { title: "Отмена", subtitle: "оставить как есть" },
+        ],
+        async (index) => {
+            if (index !== 0) return;
+            message($("#homeMessage"), "Отключаю…", "info");
+            try {
+                await api.removeDevice(hwid);
+                await loadSubscription();
+                message($("#homeMessage"), `Устройство «${name}» отключено.`, "info");
+            } catch (error) {
+                message($("#homeMessage"), error.message);
+            }
+        }
+    );
+}
+
+$("#promoForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const code = $("#promoCode").value.trim();
+    if (!code) return;
+    $("#promoSubmit").disabled = true;
+    message($("#homeMessage"), "Проверяю промокод…", "info");
+    try {
+        const result = await api.activatePromo(code);
+        $("#promoCode").value = "";
+        await loadSubscription();
+        message($("#homeMessage"), result.message || "Промокод применён.", "info");
+    } catch (error) {
+        message($("#homeMessage"), error.message);
+    } finally {
+        $("#promoSubmit").disabled = false;
+    }
+});
+
+$("#openReferral").addEventListener("click", async () => {
+    let data;
+    try {
+        data = await api.referral();
+    } catch (error) {
+        message($("#homeMessage"), error.message);
+        return;
+    }
+    const link = data.referral_link || data.link || "";
+    const invited = data.invited_count ?? data.total_invited ?? 0;
+    const earned = data.earned_kopeks ?? data.total_earned_kopeks;
+
+    openPicker(
+        "Приглашайте друзей",
+        [
+            { title: link || "Ссылки пока нет", subtitle: "нажмите, чтобы открыть в Telegram" },
+        ],
+        () => { if (link) invoke("open_url", { url: link }); },
+        `Приглашено: ${invited}${earned === undefined ? "" : ` · заработано ${money(earned)}`}`
+    );
+});
+
 /// Общая часть покупки: платит сервер, мы показываем итог и перечитываем
 /// состояние. Ошибку показываем как есть — в ней написана причина отказа,
 /// чаще всего нехватка денег.

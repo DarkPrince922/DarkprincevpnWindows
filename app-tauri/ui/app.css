@@ -496,3 +496,8 @@ button.danger:hover { border-color: var(--danger); }
     display: inline-block;
     vertical-align: -3px;
 }
+
+/* поле промокода стоит в строке с кнопкой — растягиваем его, иначе
+   кнопка «Применить» уезжает за край карточки */
+#promoForm { gap: 8px; }
+#promoForm input { flex: 1; min-width: 0; }

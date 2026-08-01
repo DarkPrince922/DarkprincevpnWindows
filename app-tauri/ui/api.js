@@ -182,4 +182,13 @@ const api = {
     renew: (periodDays) =>
         request("cabinet/subscription/renew", { method: "POST", body: { period_days: periodDays } }),
     balance: () => request("cabinet/balance"),
+
+    // --- устройства, промокоды, рефералы ---
+    devices: (subscriptionId) =>
+        request(`cabinet/subscription/devices${subscriptionId ? `?subscription_id=${subscriptionId}` : ""}`),
+    removeDevice: (hwid) =>
+        request(`cabinet/subscription/devices/${encodeURIComponent(hwid)}`, { method: "DELETE" }),
+    activatePromo: (code) =>
+        request("cabinet/promocode/activate", { method: "POST", body: { code } }),
+    referral: () => request("cabinet/referral"),
 };
