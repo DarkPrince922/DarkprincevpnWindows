@@ -14,6 +14,8 @@ const state = {
     balanceKopeks: null,
     busy: false,
     connected: false,
+    guestMode: false,
+    usingSharedSubscription: false,
 };
 
 const money = (kopeks) =>
@@ -194,14 +196,84 @@ $("#telegramButton").addEventListener("click", async () => {
     }
 });
 
+// Общая точка для вставленной ссылки и QR из файла. Ссылку сохраняем только
+// после успешной загрузки серверов: битый QR не должен запирать приложение в
+// пустом гостевом экране после перезапуска.
+async function activateGuestSubscription(rawLink) {
+    const url = GuestAccess.parseSharedSubscription(rawLink);
+    if (!url) {
+        message(
+            $("#authMessage"),
+            "Ссылка не распознана. Нужна ссылка на подписку или QR из приложения владельца."
+        );
+        return;
+    }
+
+    const controls = [$("#guestSubmit"), $("#guestQrButton")];
+    controls.forEach((button) => (button.disabled = true));
+    message($("#authMessage"), "Проверяю подписку…", "info");
+    try {
+        const servers = await fetchServers(url);
+        store.guestSubscription = url;
+        state.guestMode = !store.loggedIn;
+        state.usingSharedSubscription = true;
+        state.subscription = null;
+        state.subscriptions = [];
+        state.subIndex = 0;
+
+        $("#auth").classList.add("hidden");
+        $("#home").classList.remove("hidden");
+        renderMode();
+        renderAccessMode();
+        renderSubscription();
+        renderSubSwitcher();
+        applyServers(servers);
+        message($("#homeMessage"), "Гостевая подписка подключена.", "info");
+    } catch (error) {
+        message($("#authMessage"), `Не удалось загрузить подписку: ${String(error)}`);
+    } finally {
+        controls.forEach((button) => (button.disabled = false));
+    }
+}
+
+$("#guestForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    message($("#authMessage"), "");
+    await activateGuestSubscription($("#guestLink").value);
+});
+
+$("#guestQrButton").addEventListener("click", () => {
+    // Сбрасываем значение, чтобы повторный выбор того же файла снова дал
+    // событие change (полезно после неудачного распознавания).
+    $("#guestQrFile").value = "";
+    $("#guestQrFile").click();
+});
+
+$("#guestQrFile").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    $("#guestQrButton").disabled = true;
+    message($("#authMessage"), "Читаю QR-код…", "info");
+    try {
+        const rawLink = await GuestAccess.decodeQrFile(file);
+        $("#guestLink").value = rawLink;
+        await activateGuestSubscription(rawLink);
+    } catch (error) {
+        message($("#authMessage"), error.message || String(error));
+    } finally {
+        $("#guestQrButton").disabled = false;
+    }
+});
+
 $("#logout").addEventListener("click", async () => {
     try {
         await invoke("disconnect");
-        if (store.refresh) await api.logout(store.refresh);
+        if (!state.guestMode && store.refresh) await api.logout(store.refresh);
     } catch {
         // сервер мог не ответить — локальную сессию всё равно чистим
     }
-    store.clear();
+    if (state.guestMode) store.clearGuest();
+    else store.clear();
     location.reload();
 });
 
@@ -210,13 +282,35 @@ $("#logout").addEventListener("click", async () => {
 async function enter() {
     $("#auth").classList.add("hidden");
     $("#home").classList.remove("hidden");
+    state.guestMode = !store.loggedIn && Boolean(store.guestSubscription);
+    state.usingSharedSubscription = state.guestMode;
     renderMode();
+    renderAccessMode();
     await loadSubscription();
 }
 
 async function loadSubscription() {
     message($("#homeMessage"), "");
+    const sharedUrl = store.guestSubscription;
+    state.guestMode = !store.loggedIn && Boolean(sharedUrl);
+    state.usingSharedSubscription = state.guestMode;
+    renderAccessMode();
+
+    // Без аккаунта не обращаемся к закрытым endpoint кабинета. Это тот же
+    // режим, что на Android: серверы берём прямо из ссылки владельца.
+    if (state.guestMode) {
+        state.subscription = null;
+        state.subscriptions = [];
+        state.subIndex = 0;
+        renderSubscription();
+        renderSubSwitcher();
+        await loadServers(sharedUrl);
+        return;
+    }
+
     loadBalance(); // не ждём: баланс не мешает подключению
+    let accountError = null;
+    let ownUrl = null;
     try {
         const data = await api.subscriptions();
         const list = Array.isArray(data.subscriptions) ? data.subscriptions : [];
@@ -241,22 +335,46 @@ async function loadSubscription() {
             }
         }
         state.subscription = current;
-        renderSubscription();
-        renderSubSwitcher();
-
-        let url = current?.subscription_url;
-        if (!url) {
+        ownUrl = current?.subscription_url || null;
+        if (!ownUrl) {
             const link = await api.connectionLink().catch(() => null);
-            url = link?.subscription_url;
+            ownUrl = link?.subscription_url || null;
         }
-        if (!url) {
-            message($("#homeMessage"), "Подписки нет. Оформите тариф в личном кабинете.");
-            $("#serverName").textContent = "Нет подписки";
-            return;
-        }
-        await loadServers(url);
     } catch (error) {
-        message($("#homeMessage"), error.message);
+        accountError = error;
+        state.subscription = null;
+        state.subscriptions = [];
+        state.subIndex = 0;
+    }
+
+    const url = ownUrl || sharedUrl;
+    state.usingSharedSubscription = Boolean(sharedUrl && url === sharedUrl);
+    renderAccessMode();
+    renderSubscription();
+    renderSubSwitcher();
+
+    if (!url) {
+        message(
+            $("#homeMessage"),
+            accountError?.message || "Подписки нет. Оформите тариф в личном кабинете."
+        );
+        $("#serverName").textContent = "Нет подписки";
+        return;
+    }
+
+    const loaded = await loadServers(url);
+    // Как на Android: заработала собственная подписка — больше не занимаем
+    // место в лимите устройств владельца общей ссылки.
+    if (loaded && ownUrl && sharedUrl && ownUrl !== sharedUrl) {
+        store.clearGuest();
+        state.usingSharedSubscription = false;
+        renderAccessMode();
+    } else if (loaded && state.usingSharedSubscription && store.loggedIn) {
+        message(
+            $("#homeMessage"),
+            "Пока у аккаунта нет своей подписки, используется гостевой доступ.",
+            "info"
+        );
     }
 }
 
@@ -265,6 +383,29 @@ const isActive = (sub) =>
 
 const subTitle = (sub) =>
     sub.tariff_name || (sub.is_trial ? "Пробная подписка" : `Подписка №${sub.id ?? "—"}`);
+
+function renderAccessMode() {
+    $$(".account-only").forEach((node) =>
+        node.classList.toggle("hidden", state.guestMode)
+    );
+    $("#logout").textContent = state.guestMode
+        ? "Отключить гостевой доступ"
+        : "Выйти из аккаунта";
+
+    const shared = state.guestMode || state.usingSharedSubscription;
+    $("#guestAccessCard").classList.toggle("hidden", !shared);
+    $("#guestAccountLogin").classList.toggle("hidden", !state.guestMode);
+    $("#guestAccessText").textContent = state.guestMode
+        ? "Серверы получены по ссылке владельца. Кабинет, покупки и устройства недоступны."
+        : "Общая ссылка работает как запасная, пока у аккаунта нет своей подписки.";
+}
+
+$("#guestAccountLogin").addEventListener("click", async () => {
+    if (state.connected) await disconnectNow();
+    $("#home").classList.add("hidden");
+    $("#auth").classList.remove("hidden");
+    message($("#authMessage"), "Гостевая подписка сохранена. Войдите в свой аккаунт.", "info");
+});
 
 // ================= несколько подписок =================
 
@@ -579,19 +720,48 @@ function deviceId() {
 
 async function loadServers(url) {
     try {
-        state.servers = await invoke("load_subscription", { url, hwid: deviceId() });
-        const saved = Number(localStorage.getItem("dp_server") || 0);
-        state.selected = saved < state.servers.length ? saved : 0;
-        renderServer();
+        applyServers(await fetchServers(url));
+        return true;
     } catch (error) {
         $("#serverName").textContent = "Серверы не загрузились";
         message($("#homeMessage"), String(error));
+        return false;
     }
+}
+
+function fetchServers(url) {
+    return invoke("load_subscription", { url, hwid: deviceId() });
+}
+
+function applyServers(servers) {
+    state.servers = servers;
+    const saved = Number(localStorage.getItem("dp_server") || 0);
+    state.selected = saved < state.servers.length ? saved : 0;
+    renderServer();
 }
 
 function renderSubscription() {
     const sub = state.subscription;
-    if (!sub) return;
+    if (state.usingSharedSubscription) {
+        $("#planName").textContent = "Гостевая подписка";
+        $("#planState").textContent = "Активна по ссылке владельца";
+        $("#days").textContent = "—";
+        $("#daysWord").textContent = "";
+        $("#traffic").textContent = "Данные доступны владельцу";
+        $("#trafficBar").classList.add("hidden");
+        $("#devices").textContent = "—";
+        return;
+    }
+    if (!sub) {
+        $("#planName").textContent = "Подписки нет";
+        $("#planState").textContent = "";
+        $("#days").textContent = "—";
+        $("#daysWord").textContent = "";
+        $("#traffic").textContent = "—";
+        $("#trafficBar").classList.add("hidden");
+        $("#devices").textContent = "—";
+        return;
+    }
     $("#planName").textContent = sub.tariff_name || (sub.is_trial ? "Пробная подписка" : "Подписка");
     $("#planState").textContent = isActive(sub) ? "Активна" : "Неактивна";
 
@@ -834,10 +1004,9 @@ async function startUpdate(now, later) {
 // ================= старт =================
 
 (async () => {
-    if (store.loggedIn) await enter();
+    if (store.loggedIn || store.guestSubscription) await enter();
     else $("#auth").classList.remove("hidden");
 
     checkUpdate();
     setInterval(checkUpdate, UPDATE_EVERY);
 })();
-
