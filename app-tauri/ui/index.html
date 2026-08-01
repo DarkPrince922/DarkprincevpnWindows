@@ -26,6 +26,17 @@
         </button>
     </header>
 
+    <!-- Полоса обновления. Показывается поверх обеих страниц: обновиться
+         можно и не входя в аккаунт. -->
+    <div class="update-bar hidden" id="updateBar">
+        <div class="update-text">
+            <b id="updateTitle">Вышло обновление</b>
+            <span class="tiny muted" id="updateHint"></span>
+        </div>
+        <button class="primary small" id="updateAction">Обновить</button>
+        <button class="ghost small" id="updateHide" title="Скрыть">✕</button>
+    </div>
+
     <main>
         <!-- ================= ВХОД ================= -->
         <section id="auth">

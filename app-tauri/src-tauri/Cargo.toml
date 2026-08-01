@@ -15,6 +15,9 @@ dp-engine = { path = "../engine" }
 # Один запуск — одно приложение. Иначе повторный запуск вешает в трей ещё
 # один значок, потому что приложение продолжает работать с закрытым окном.
 tauri-plugin-single-instance = "2"
+# Обновления с проверкой подписи: скачанный установщик запускается на машине
+# пользователя, и одного HTTPS для доверия к нему мало.
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

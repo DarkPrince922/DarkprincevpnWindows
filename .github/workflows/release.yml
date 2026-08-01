@@ -50,6 +50,12 @@ jobs:
 
       - name: Собрать
         working-directory: app-tauri/src-tauri
+        env:
+          # Ключ подписи обновлений. Пока секрета нет, сборка идёт обычным
+          # порядком, только рядом с установщиком не появится файл .sig — и
+          # шаг с манифестом ниже честно скажет, что обновления не поедут.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx --yes @tauri-apps/cli@^2 build
 
       - name: Подготовить установщик
@@ -64,6 +70,29 @@ jobs:
           # Имя от Tauri содержит пробелы — по ссылке такое неудобно
           $file = "DarkPrinceVPN-$version-setup.exe"
           Copy-Item $source.FullName $file
+
+          # Манифест обновлений. Адрес ведёт на наш сайт, а не на GitHub: у
+          # части пользователей он недоступен ровно тогда, когда обновление и
+          # нужно. Имя файла на сайте без версии, поэтому ссылка постоянная.
+          $sig = "$($source.FullName).sig"
+          if (Test-Path $sig) {
+              $manifest = [ordered]@{
+                  version   = $version
+                  notes     = "DarkPrince VPN $version"
+                  pub_date  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                  platforms = [ordered]@{
+                      'windows-x86_64' = [ordered]@{
+                          url       = 'https://dprince.online/downloads/DarkPrinceVPN-setup.exe'
+                          signature = (Get-Content $sig -Raw).Trim()
+                      }
+                  }
+              }
+              $manifest | ConvertTo-Json -Depth 5 |
+                  Set-Content 'windows-x86_64.json' -Encoding UTF8
+              Write-Host "манифест обновлений собран"
+          } else {
+              Write-Host "::warning::Нет секрета TAURI_SIGNING_PRIVATE_KEY — подписи нет, манифест не собран, обновления до пользователей не поедут"
+          }
 
           $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
           $size = [math]::Round($source.Length / 1MB, 1)
@@ -97,8 +126,11 @@ jobs:
         run: |
           # --target нужен, когда тега ещё нет: релиз создаст его сам,
           # на том коммите, из которого собирались
-          gh release create "$env:TAG" `
-            "${{ steps.installer.outputs.file }}" `
+          # манифест появляется только когда сборку было чем подписать
+          $assets = @("${{ steps.installer.outputs.file }}")
+          if (Test-Path 'windows-x86_64.json') { $assets += 'windows-x86_64.json' }
+
+          gh release create "$env:TAG" @assets `
             --target "${{ github.sha }}" `
             --title "DarkPrince VPN $env:TAG" `
             --notes-file notes.md

@@ -25,6 +25,15 @@ const store = {
     get loggedIn() {
         return Boolean(this.refresh);
     },
+    /// Версия обновления, полосу про которую закрыли крестиком. Переживает
+    /// перезапуск: иначе полоса возвращалась бы при каждом запуске. Выход из
+    /// аккаунта её не сбрасывает — обновление к аккаунту отношения не имеет.
+    get updateHidden() {
+        return localStorage.getItem("dp_update_hidden") || "";
+    },
+    set updateHidden(version) {
+        localStorage.setItem("dp_update_hidden", version);
+    },
     save(auth) {
         if (!auth || !auth.access_token) return false;
         localStorage.setItem("dp_access", auth.access_token);

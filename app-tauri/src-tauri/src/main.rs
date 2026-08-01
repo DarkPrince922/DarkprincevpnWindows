@@ -8,6 +8,8 @@
 //! отдать интерфейсу команды, увести долгую работу с потока окна и
 //! выполнить сетевые запросы, которым мешало бы правило одного источника.
 
+mod update;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -347,6 +349,8 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_window(app);
         }))
+        // Обновления: плагин скачивает установщик и проверяет его подпись.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let resources = app.path().resource_dir().unwrap_or_else(|_| PathBuf::from("."));
             let core_dir = resources.join("core");
@@ -439,7 +443,9 @@ fn main() {
             restart_elevated,
             open_url,
             quit_app,
-            http
+            http,
+            update::check_update,
+            update::install_update
         ])
         .run(tauri::generate_context!())
         .expect("не удалось запустить приложение");

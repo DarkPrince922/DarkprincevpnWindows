@@ -753,9 +753,68 @@ function daysUntil(endDate) {
     return Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000));
 }
 
+// ================= обновления =================
+
+// Проверяем при запуске и раз в шесть часов. Чаще незачем: приложение и так
+// запускают часто, а манифест отдаётся без кеша и всегда свежий.
+const UPDATE_EVERY = 6 * 60 * 60 * 1000;
+
+async function checkUpdate() {
+    let info;
+    try {
+        info = await invoke("check_update");
+    } catch {
+        return; // проверка обновлений не должна мешать работать
+    }
+    if (!info || info.failed || !info.version) return;
+
+    const bar = $("#updateBar");
+    // не мозолим глаза той же версией, если её уже закрыли
+    if (store.updateHidden === info.version) return;
+
+    $("#updateTitle").textContent = `Вышла версия ${info.version}`;
+    const action = $("#updateAction");
+
+    if (info.can_install) {
+        $("#updateHint").textContent = "Обновление скачается и поставится само";
+        action.textContent = "Обновить";
+        action.classList.remove("hidden");
+        action.onclick = async () => {
+            action.disabled = true;
+            action.textContent = "Обновляю…";
+            try {
+                // при удаче приложение перезапустится и сюда не вернётся
+                await invoke("install_update");
+            } catch (error) {
+                action.disabled = false;
+                action.textContent = "Обновить";
+                $("#updateHint").textContent = String(error);
+            }
+        };
+    } else if (info.command) {
+        // Пакет принадлежит пакетному менеджеру: сами не лезем, показываем чем
+        $("#updateHint").textContent = info.command;
+        action.classList.add("hidden");
+    } else {
+        // сборка из исходников — сказать про версию можно, советовать нечего
+        $("#updateHint").textContent = "";
+        action.classList.add("hidden");
+    }
+
+    $("#updateHide").onclick = () => {
+        store.updateHidden = info.version;
+        bar.classList.add("hidden");
+    };
+    bar.classList.remove("hidden");
+}
+
 // ================= старт =================
 
 (async () => {
     if (store.loggedIn) await enter();
     else $("#auth").classList.remove("hidden");
+
+    checkUpdate();
+    setInterval(checkUpdate, UPDATE_EVERY);
 })();
+

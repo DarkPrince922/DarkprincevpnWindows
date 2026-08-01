@@ -501,3 +501,36 @@ button.danger:hover { border-color: var(--danger); }
    кнопка «Применить» уезжает за край карточки */
 #promoForm { gap: 8px; }
 #promoForm input { flex: 1; min-width: 0; }
+
+/* Полоса обновления. Живёт над содержимым: обновиться можно и до входа. */
+.update-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 14px 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--gold-soft);
+    border: 1px solid rgba(207, 170, 98, 0.4);
+}
+
+.update-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.update-text b {
+    display: block;
+    font-size: 13px;
+    color: #e8d3a8;
+}
+
+/* команда для пакетного менеджера длинная — пусть переносится, а не режет полосу */
+.update-text .tiny {
+    display: block;
+    word-break: break-word;
+}
+
+.update-bar button {
+    flex: none;
+}
