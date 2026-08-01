@@ -13,6 +13,8 @@ name: Релиз
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths: [".github/release-version"]
   workflow_dispatch:
     inputs:
       version:
@@ -36,6 +38,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app-tauri/src-tauri
+
+      # В мобильном интерфейсе GitHub запуск workflow неудобен. Поэтому
+      # изменение одного файла версии в main запускает тот же релиз, что тег
+      # или кнопка Run workflow. Для тегов и ручного запуска поведение прежнее.
+      - name: Определить версию
+        shell: pwsh
+        run: |
+          $tag = $env:TAG
+          if ($tag -eq 'main') {
+              $tag = (Get-Content '.github/release-version' -Raw).Trim()
+          }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+              Write-Error "Неверная версия: $tag"
+              exit 1
+          }
+          "TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Скачать ядро и мост
         shell: pwsh
