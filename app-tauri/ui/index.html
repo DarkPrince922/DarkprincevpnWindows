@@ -62,6 +62,22 @@
                 <button class="ghost small grow" id="toggleRegister">Нет аккаунта? Регистрация</button>
                 <button class="ghost small" id="forgot">Забыли пароль?</button>
             </div>
+
+            <div class="divider">ИЛИ ГОСТЕВОЙ ДОСТУП</div>
+
+            <form id="guestForm" class="guest-form">
+                <label class="field">
+                    <span>Ссылка от владельца подписки</span>
+                    <input type="text" id="guestLink" autocomplete="off"
+                        placeholder="https://… или darkprincevpn://…">
+                </label>
+                <div class="row">
+                    <button class="grow" id="guestSubmit" type="submit">Войти по ссылке</button>
+                    <button class="grow" id="guestQrButton" type="button">QR из файла</button>
+                </div>
+                <input class="hidden" type="file" id="guestQrFile" accept="image/*">
+                <p class="tiny muted guest-note">Работает без аккаунта. QR читается только на этом компьютере.</p>
+            </form>
         </section>
 
         <!-- ================= ГЛАВНОЕ ================= -->
@@ -128,8 +144,18 @@
                 <div class="kv"><span class="k">Устройств по тарифу</span><span id="devices">—</span></div>
             </div>
 
-            <p class="section">Тариф и баланс</p>
-            <div class="card">
+            <div class="card hidden" id="guestAccessCard">
+                <div class="row">
+                    <div class="grow">
+                        <div class="gold">Гостевой доступ</div>
+                        <div class="tiny muted" id="guestAccessText"></div>
+                    </div>
+                    <button class="small" id="guestAccountLogin">Войти в аккаунт</button>
+                </div>
+            </div>
+
+            <p class="section account-only">Тариф и баланс</p>
+            <div class="card account-only">
                 <div class="row">
                     <div class="grow">
                         <div id="balanceValue">—</div>
@@ -143,8 +169,8 @@
                 </div>
             </div>
 
-            <p class="section">Ещё</p>
-            <div class="card">
+            <p class="section account-only">Ещё</p>
+            <div class="card account-only">
                 <div class="row">
                     <button class="small grow" id="openDevices">Устройства</button>
                     <button class="small grow" id="openReferral">Рефералы</button>
@@ -156,7 +182,7 @@
             </div>
 
             <div class="row" style="margin-top:4px">
-                <button class="ghost small grow" id="openCabinet">Личный кабинет</button>
+                <button class="ghost small grow account-only" id="openCabinet">Личный кабинет</button>
                 <button class="ghost small" id="refresh">Обновить</button>
                 <button class="ghost small" id="logout">Выйти из аккаунта</button>
             </div>
@@ -212,6 +238,8 @@
     </div>
 
     <script src="api.js"></script>
+    <script src="jsQR.min.js"></script>
+    <script src="guest.js"></script>
     <script src="app.js"></script>
 </body>
 

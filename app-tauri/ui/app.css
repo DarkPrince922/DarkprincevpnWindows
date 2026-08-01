@@ -216,7 +216,7 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     flex-direction: column;
     justify-content: center;
     min-height: 100%;
-    padding: 0 4px;
+    padding: 14px 4px;
 }
 
 #auth .logo {
@@ -258,6 +258,10 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     height: 1px;
     background: var(--outline);
 }
+
+.guest-form .row { gap: 8px; }
+.guest-form .row button { padding-left: 10px; padding-right: 10px; }
+.guest-note { margin: 8px 4px 0; text-align: center; }
 
 /* ---------- кнопка подключения ---------- */
 

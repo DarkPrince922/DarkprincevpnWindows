@@ -25,6 +25,16 @@ const store = {
     get loggedIn() {
         return Boolean(this.refresh);
     },
+    /// Ссылка, которой поделился владелец подписки. Она живёт отдельно от
+    /// токенов кабинета: гость может войти в свой аккаунт и не потерять VPN,
+    /// пока не оформит собственную подписку.
+    get guestSubscription() {
+        return localStorage.getItem("dp_guest_subscription") || "";
+    },
+    set guestSubscription(url) {
+        if (url) localStorage.setItem("dp_guest_subscription", url);
+        else localStorage.removeItem("dp_guest_subscription");
+    },
     /// Версия обновления, полосу про которую закрыли крестиком. Переживает
     /// перезапуск: иначе полоса возвращалась бы при каждом запуске. Выход из
     /// аккаунта её не сбрасывает — обновление к аккаунту отношения не имеет.
@@ -46,6 +56,9 @@ const store = {
         ["dp_access", "dp_refresh", "dp_expires", "dp_subscription"].forEach((key) =>
             localStorage.removeItem(key)
         );
+    },
+    clearGuest() {
+        localStorage.removeItem("dp_guest_subscription");
     },
 };
 
