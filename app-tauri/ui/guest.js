@@ -8,26 +8,30 @@
     const MAX_IMAGE_PIXELS = 40 * 1000 * 1000;
     const MAX_DECODE_SIDE = 2200;
 
+    // Принимаем только https. Ссылка подписки — это доступ к VPN целиком:
+    // по http её прочитал бы любой на пути, а именно от этого приложение и
+    // защищает. Схему darkprincevpn:// разбираем сами, но URL внутри неё
+    // проверяем так же.
     function parseSharedSubscription(raw) {
         const text = String(raw || "").trim();
         if (!text) return null;
 
-        if (/^https?:\/\//i.test(text)) return text;
+        if (/^https:\/\//i.test(text)) return text;
         if (!/^darkprincevpn:\/\//i.test(text)) return null;
 
         try {
             const link = new URL(text);
             const queryUrl = link.searchParams.get("url");
-            if (queryUrl && /^https?:\/\//i.test(queryUrl)) return queryUrl;
+            if (queryUrl && /^https:\/\//i.test(queryUrl)) return queryUrl;
         } catch {
             // Старый вариант ссылки разберём ниже без URL API.
         }
 
         const pathUrl = text.replace(/^darkprincevpn:\/\/sub\//i, "");
-        if (/^https?:\/\//i.test(pathUrl)) return pathUrl;
+        if (/^https:\/\//i.test(pathUrl)) return pathUrl;
         try {
             const decoded = decodeURIComponent(pathUrl);
-            return /^https?:\/\//i.test(decoded) ? decoded : null;
+            return /^https:\/\//i.test(decoded) ? decoded : null;
         } catch {
             return null;
         }

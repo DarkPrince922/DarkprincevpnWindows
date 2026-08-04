@@ -27,6 +27,11 @@ jobs:
         working-directory: app-tauri/engine
         run: cargo test
 
+      # Разбор гостевой ссылки — чистая функция с кучей краевых случаев.
+      # Node на runner'е уже есть, свой тест-раннер ему не нужен.
+      - name: Тесты разбора ссылки
+        run: node --test app-tauri/ui/guest.test.js
+
   build:
     name: Собрать приложение
     runs-on: windows-latest

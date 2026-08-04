@@ -204,7 +204,8 @@ async function activateGuestSubscription(rawLink) {
     if (!url) {
         message(
             $("#authMessage"),
-            "Ссылка не распознана. Нужна ссылка на подписку или QR из приложения владельца."
+            "Ссылка не распознана. Нужна ссылка на подписку по https или QR из "
+            + "приложения владельца."
         );
         return;
     }
