@@ -11,6 +11,7 @@ const state = {
     subscription: null,
     subscriptions: [],
     subIndex: 0,
+    pings: [],
     balanceKopeks: null,
     busy: false,
     connected: false,
@@ -789,7 +790,26 @@ function renderServer() {
     $("#serverTransport").textContent = server ? server.transport : "";
 }
 
+// Пороги те же, что в приложении на Android: список серверов должен
+// читаться одинаково, с какого бы устройства человек ни смотрел.
+function pingChip(millis) {
+    if (millis === undefined) return "";
+    const grade =
+        millis < 0 ? "dead" : millis < 300 ? "good" : millis < 700 ? "fair" : "poor";
+    const label = millis < 0 ? "нет" : `${millis} мс`;
+    return (
+        `<span class="ping ${grade}">` +
+        "<span class=\"bars\"><i></i><i></i><i></i></span>" +
+        `<span>${label}</span></span>`
+    );
+}
+
 $("#serverPick").addEventListener("click", () => {
+    renderServerList();
+    $("#sheet").classList.remove("hidden");
+});
+
+function renderServerList() {
     const list = $("#serverList");
     list.innerHTML = "";
     state.servers.forEach((server, index) => {
@@ -798,7 +818,8 @@ $("#serverPick").addEventListener("click", () => {
         button.setAttribute("aria-selected", String(index === state.selected));
         button.innerHTML =
             `<span class="grow"><span class="ellipsis" style="display:block">${escape(server.name)}</span>` +
-            `<span class="tiny muted">${escape(server.transport)}</span></span>`;
+            `<span class="tiny muted">${escape(server.transport)}</span></span>` +
+            pingChip(state.pings[index]);
         button.addEventListener("click", async () => {
             state.selected = index;
             localStorage.setItem("dp_server", String(index));
@@ -808,7 +829,24 @@ $("#serverPick").addEventListener("click", () => {
         });
         list.append(button);
     });
-    $("#sheet").classList.remove("hidden");
+}
+
+$("#pingButton").addEventListener("click", async () => {
+    const button = $("#pingButton");
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "Проверяю…";
+    try {
+        state.pings = await invoke("ping_servers");
+    } catch (error) {
+        // Замер — вещь необязательная: список серверов остаётся рабочим
+        // и без него, поэтому молчим в интерфейсе, а не пугаем ошибкой.
+        console.error(error);
+    } finally {
+        button.disabled = false;
+        button.textContent = "Проверить пинг";
+        renderServerList();
+    }
 });
 
 $("#sheet").addEventListener("click", (event) => {

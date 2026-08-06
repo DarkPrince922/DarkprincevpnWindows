@@ -42,7 +42,10 @@
     --shadow: rgba(0, 0, 0, 0.5);
     --power-hi: rgba(38, 52, 80, 0.9);
     --power-lo: rgba(16, 23, 38, 0.95);
-    --blob-opacity: var(--blob-opacity);
+    --blob-opacity: 0.26;
+    --good-rgb: 63, 182, 139;
+    --fair-rgb: 224, 169, 74;
+    --bad-rgb: 224, 91, 91;
 }
 
 [data-theme="sunset"] {
@@ -76,6 +79,9 @@
     --power-hi: rgba(66, 46, 80, 0.9);
     --power-lo: rgba(34, 24, 42, 0.95);
     --blob-opacity: 0.3;
+    --good-rgb: 63, 182, 139;
+    --fair-rgb: 224, 169, 74;
+    --bad-rgb: 224, 91, 91;
 }
 
 [data-theme="indigo"] {
@@ -109,6 +115,9 @@
     --power-hi: #ffffff;
     --power-lo: #dde5f4;
     --blob-opacity: 0.22;
+    --good-rgb: 46, 158, 102;
+    --fair-rgb: 176, 125, 30;
+    --bad-rgb: 194, 65, 63;
 }
 
 [data-theme="graphite"] {
@@ -142,6 +151,9 @@
     --power-hi: #ffffff;
     --power-lo: #e3e3e6;
     --blob-opacity: 0.16;
+    --good-rgb: 46, 158, 102;
+    --fair-rgb: 176, 125, 30;
+    --bad-rgb: 194, 65, 63;
 }
 
 * {
@@ -720,3 +732,48 @@ button.danger:hover { border-color: var(--danger); }
 }
 
 .swatch[aria-selected="true"] .title { color: var(--accent); font-weight: 600; }
+
+/* ---------- задержка до узла ---------- */
+
+/* Голая цифра в конце строки читается как случайное число: чтобы понять,
+   хороший это узел или плохой, пришлось бы сравнивать строки глазами.
+   Поэтому «таблетка» со шкалой: три палочки и цвет отвечают сразу. */
+/* Цвет держим тройкой чисел, а не готовым цветом: подложка и рамка — тот же
+   оттенок с прозрачностью, а посчитать её через color-mix нельзя. WebKitGTK
+   в старых дистрибутивах его не знает, и чип остался бы вообще без фона. */
+.ping {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    min-width: 68px;
+    padding: 4px 8px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgb(var(--ping));
+    background: rgba(var(--ping), 0.14);
+    border: 1px solid rgba(var(--ping), 0.32);
+}
+
+.ping.good { --ping: var(--good-rgb); }
+.ping.fair { --ping: var(--fair-rgb); }
+.ping.poor,
+.ping.dead { --ping: var(--bad-rgb); }
+
+.ping .bars { display: flex; align-items: flex-end; gap: 2px; height: 11px; }
+.ping .bars i { width: 3px; border-radius: 2px; background: rgb(var(--ping)); opacity: 0.25; }
+.ping .bars i:nth-child(1) { height: 5px; }
+.ping .bars i:nth-child(2) { height: 8px; }
+.ping .bars i:nth-child(3) { height: 11px; }
+.ping.good .bars i,
+.ping.fair .bars i:nth-child(-n + 2),
+.ping.poor .bars i:nth-child(1) { opacity: 1; }
+
+/* Строка заголовка панели: название слева, кнопка проверки справа. */
+.sheet .section.with-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}

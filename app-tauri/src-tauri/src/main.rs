@@ -14,7 +14,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::time::{Duration, Instant};
 
 use dp_engine::{Mode, Server, State, Vpn};
 use serde::{Deserialize, Serialize};
@@ -111,6 +112,72 @@ async fn disconnect(app: TauriState<'_, App>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || vpn.lock().unwrap().disconnect())
         .await
         .map_err(|error| error.to_string())
+}
+
+/// Сколько ждём узел. Больше двух секунд ждать бессмысленно: такой узел
+/// всё равно непригоден, а список должен обновиться быстро.
+const PING_TIMEOUT: Duration = Duration::from_millis(2000);
+
+/// Сколько узлов щупаем разом. По одному список из двадцати серверов
+/// обновлялся бы полминуты, а все сразу — это два десятка одновременных
+/// соединений с одного адреса, что на стороне панели выглядит как перебор.
+const PING_BATCH: usize = 4;
+
+/// Время установки TCP-соединения с узлом, в миллисекундах. -1 — не ответил.
+///
+/// Это не ICMP: до серверов панели он обычно не доходит, его режут по
+/// дороге. Здесь то же соединение, которым потом пойдёт трафик, поэтому
+/// цифра отвечает на вопрос «через какой узел будет быстрее», а не на
+/// вопрос «доходит ли пакет».
+///
+/// Разрешение имени в замер не входит: оно кешируется системой, и первый
+/// узел иначе выглядел бы вдвое хуже остальных на ровном месте.
+fn measure(address: &str, port: u16) -> i64 {
+    let resolved: Vec<SocketAddr> = match (address, port).to_socket_addrs() {
+        Ok(list) => list.collect(),
+        Err(_) => return -1,
+    };
+    for addr in resolved {
+        let start = Instant::now();
+        if TcpStream::connect_timeout(&addr, PING_TIMEOUT).is_ok() {
+            return start.elapsed().as_millis() as i64;
+        }
+    }
+    -1
+}
+
+/// Задержка до всех узлов подписки, в порядке списка.
+#[tauri::command]
+async fn ping_servers(app: TauriState<'_, App>) -> Result<Vec<i64>, String> {
+    let targets: Vec<(String, u16)> = app
+        .servers
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|server| (server.address.clone(), server.port))
+        .collect();
+
+    // Замер блокирующий, поэтому уводим его с потока окна целиком: иначе
+    // на время проверки интерфейс перестанет отвечать.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results = Vec::with_capacity(targets.len());
+        for batch in targets.chunks(PING_BATCH) {
+            let measured: Vec<i64> = std::thread::scope(|scope| {
+                let handles: Vec<_> = batch
+                    .iter()
+                    .map(|(address, port)| scope.spawn(move || measure(address, *port)))
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|handle| handle.join().unwrap_or(-1))
+                    .collect()
+            });
+            results.extend(measured);
+        }
+        results
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -440,6 +507,7 @@ fn main() {
             connect,
             disconnect,
             status,
+            ping_servers,
             restart_elevated,
             open_url,
             quit_app,
