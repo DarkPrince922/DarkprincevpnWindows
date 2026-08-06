@@ -52,3 +52,6 @@ jobs:
           name: DarkPrinceVPN-windows
           path: publish/
           if-no-files-found: error
+          # квота хранилища общая на весь аккаунт, по умолчанию артефакты
+          # лежат 90 дней; недели с запасом хватает, чтобы забрать сборку
+          retention-days: 7
