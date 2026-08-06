@@ -123,13 +123,6 @@ npx @tauri-apps/cli@^2 build
 cd app-tauri/engine && cargo test
 ```
 
-Старая версия на WPF (нужен .NET 8 SDK):
-
-```powershell
-dotnet publish src/DarkPrinceVpn/DarkPrinceVpn.csproj -c Release -o publish
-powershell -ExecutionPolicy Bypass -File scripts/fetch-cores.ps1 -OutputDirectory publish/core
-```
-
 Папка `core/` с `xray.exe`, `tun2socks.exe`, `wintun.dll` и базами
 geoip/geosite в репозитории не хранится — вместе они весят под сотню мегабайт
 и обновляются независимо от приложения.
@@ -150,7 +143,8 @@ app-tauri/
   src-tauri/src/main.rs    оболочка: команды, значок в трее, выход
   ui/                      интерфейс
 
-src/DarkPrinceVpn/         старая версия на WPF
+src/DarkPrinceVpn/         старая версия на WPF: на CI не собирается,
+                           лежит только как справка
   Core/
     ProxyProfile.cs        модель узла подписки
     LinkParser.cs          разбор подписки: Xray JSON, base64, ссылки
