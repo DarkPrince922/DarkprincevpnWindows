@@ -56,6 +56,7 @@ $("#exitAsk").addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!$("#exitAsk").classList.contains("hidden")) closeAsk();
+    else if (!$("#themeSheet").classList.contains("hidden")) $("#themeSheet").classList.add("hidden");
     else if (!$("#pickSheet").classList.contains("hidden")) $("#pickSheet").classList.add("hidden");
     else if (!$("#sheet").classList.contains("hidden")) $("#sheet").classList.add("hidden");
 });
@@ -1011,3 +1012,53 @@ async function startUpdate(now, later) {
     checkUpdate();
     setInterval(checkUpdate, UPDATE_EVERY);
 })();
+
+// ================= оформление =================
+
+const THEMES = [
+    { id: "night", title: "Ночь" },
+    { id: "sunset", title: "Закат" },
+    { id: "indigo", title: "Индиго" },
+    { id: "graphite", title: "Графит" },
+];
+
+// Названия ни о чём не говорят, пока не увидишь, поэтому у каждой темы —
+// образец, нарисованный её же цветами: фон, два акцента и полоски вместо
+// текста. Красит их CSS по data-theme, здесь только разметка.
+function renderThemes() {
+    const current = document.documentElement.dataset.theme;
+    const list = $("#themeList");
+    list.textContent = "";
+    for (const theme of THEMES) {
+        const button = document.createElement("button");
+        button.className = "swatch";
+        button.setAttribute("aria-selected", String(theme.id === current));
+        // data-theme стоит на картинке, а не на кнопке: иначе подпись под ней
+        // красилась бы цветами своей темы и на светлой странице «Ночь» и
+        // «Закат» читались бы еле-еле
+        button.innerHTML =
+            `<span class="preview" data-theme="${theme.id}">` +
+            '<span class="dots"><i></i><i></i></span>' +
+            '<span class="lines"><i></i><i></i></span>' +
+            "</span>" +
+            `<span class="title">${theme.title}</span>`;
+        button.addEventListener("click", () => applyTheme(theme.id));
+        list.append(button);
+    }
+}
+
+function applyTheme(id) {
+    const known = THEMES.some((theme) => theme.id === id) ? id : "night";
+    document.documentElement.dataset.theme = known;
+    localStorage.setItem("dp_theme", known);
+    renderThemes();
+}
+
+$("#themeButton").addEventListener("click", () => {
+    renderThemes();
+    $("#themeSheet").classList.remove("hidden");
+});
+
+$("#themeSheet").addEventListener("click", (event) => {
+    if (event.target === $("#themeSheet")) $("#themeSheet").classList.add("hidden");
+});

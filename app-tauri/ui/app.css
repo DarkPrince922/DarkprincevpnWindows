@@ -1,18 +1,147 @@
 /* Оформление то же, что на сайте: тёмно-синий фон, золото, скруглённые
    карточки. Окно безрамочное, поэтому заголовок нарисован сам. */
 
-:root {
+/* Тема выбирается атрибутом data-theme. Он же вешается на образцы в окне
+   выбора — поэтому селектор не привязан к html: один и тот же набор
+   переменных красит и всё приложение, и картинку-образец размером с ноготь.
+
+   :root оставлен вместе с «ночью» на случай, если скрипт не отработал:
+   без него страница осталась бы вообще без цветов. */
+:root,
+[data-theme="night"] {
+    color-scheme: dark;
     --bg: #0a0e17;
     --surface: rgba(23, 34, 54, 0.72);
     --surface-solid: #121a29;
     --outline: rgba(94, 116, 160, 0.28);
-    --gold: #cfaa62;
-    --gold-soft: rgba(207, 170, 98, 0.16);
-    --blue: #5e8bff;
+    --accent: #cfaa62;
+    --accent-soft: rgba(207, 170, 98, 0.16);
+    --accent-line: rgba(207, 170, 98, 0.4);
+    --accent-hover: rgba(207, 170, 98, 0.55);
+    --accent-hi: #dfbb72;
+    --accent-lo: #c09347;
+    --on-accent: #1a1408;
+    --accent-2: #5e8bff;
     --text: #edf0f7;
     --muted: #9aa6bd;
     --danger: #e05b5b;
+    --danger-bg: rgba(224, 91, 91, 0.12);
+    --danger-line: rgba(224, 91, 91, 0.4);
+    --danger-text: #f0b4b4;
     --ok: #5fbf7f;
+    --info-text: #e8d3a8;
+    /* Осветление поверх фона: наведение, выбранный сегмент, блик. На тёмных
+       темах это белый с малой прозрачностью, на светлых — наоборот тёмный,
+       иначе «подсветка» на белом фоне не видна вовсе. */
+    --wash: rgba(255, 255, 255, 0.07);
+    --wash-soft: rgba(255, 255, 255, 0.05);
+    --gloss: rgba(255, 255, 255, 0.06);
+    /* Утопленные места: поля ввода, полоса трафика, подложка сегментов. */
+    --sink: rgba(10, 14, 23, 0.55);
+    --scrim: rgba(6, 9, 16, 0.62);
+    --shadow: rgba(0, 0, 0, 0.5);
+    --power-hi: rgba(38, 52, 80, 0.9);
+    --power-lo: rgba(16, 23, 38, 0.95);
+    --blob-opacity: var(--blob-opacity);
+}
+
+[data-theme="sunset"] {
+    color-scheme: dark;
+    --bg: #1b1422;
+    --surface: rgba(46, 35, 56, 0.72);
+    --surface-solid: #2a2033;
+    --outline: rgba(150, 116, 168, 0.3);
+    --accent: #ff8a5c;
+    --accent-soft: rgba(255, 138, 92, 0.16);
+    --accent-line: rgba(255, 138, 92, 0.42);
+    --accent-hover: rgba(255, 138, 92, 0.58);
+    --accent-hi: #ffa079;
+    --accent-lo: #e06b3e;
+    --on-accent: #2a1206;
+    --accent-2: #c77dff;
+    --text: #f7edf3;
+    --muted: #bca6c4;
+    --danger: #e05b5b;
+    --danger-bg: rgba(224, 91, 91, 0.14);
+    --danger-line: rgba(224, 91, 91, 0.42);
+    --danger-text: #f6bcbc;
+    --ok: #4fc08d;
+    --info-text: #ffd0b8;
+    --wash: rgba(255, 255, 255, 0.08);
+    --wash-soft: rgba(255, 255, 255, 0.05);
+    --gloss: rgba(255, 255, 255, 0.07);
+    --sink: rgba(20, 14, 26, 0.55);
+    --scrim: rgba(14, 9, 18, 0.62);
+    --shadow: rgba(0, 0, 0, 0.5);
+    --power-hi: rgba(66, 46, 80, 0.9);
+    --power-lo: rgba(34, 24, 42, 0.95);
+    --blob-opacity: 0.3;
+}
+
+[data-theme="indigo"] {
+    color-scheme: light;
+    --bg: #edf1f9;
+    --surface: rgba(255, 255, 255, 0.82);
+    --surface-solid: #ffffff;
+    --outline: rgba(60, 80, 140, 0.18);
+    --accent: #4f46e5;
+    --accent-soft: rgba(79, 70, 229, 0.12);
+    --accent-line: rgba(79, 70, 229, 0.35);
+    --accent-hover: rgba(79, 70, 229, 0.5);
+    --accent-hi: #635bf0;
+    --accent-lo: #4338ca;
+    --on-accent: #ffffff;
+    --accent-2: #1d9bdb;
+    --text: #161a38;
+    --muted: #5b6488;
+    --danger: #c2413f;
+    --danger-bg: rgba(194, 65, 63, 0.1);
+    --danger-line: rgba(194, 65, 63, 0.35);
+    --danger-text: #9b2f2d;
+    --ok: #2e9e66;
+    --info-text: #3a3480;
+    --wash: rgba(20, 26, 60, 0.07);
+    --wash-soft: rgba(20, 26, 60, 0.04);
+    --gloss: rgba(255, 255, 255, 0.7);
+    --sink: rgba(20, 26, 60, 0.05);
+    --scrim: rgba(28, 36, 70, 0.34);
+    --shadow: rgba(30, 40, 80, 0.18);
+    --power-hi: #ffffff;
+    --power-lo: #dde5f4;
+    --blob-opacity: 0.22;
+}
+
+[data-theme="graphite"] {
+    color-scheme: light;
+    --bg: #f3f3f5;
+    --surface: rgba(255, 255, 255, 0.85);
+    --surface-solid: #ffffff;
+    --outline: rgba(20, 20, 26, 0.14);
+    --accent: #1c1c1e;
+    --accent-soft: rgba(28, 28, 30, 0.08);
+    --accent-line: rgba(28, 28, 30, 0.3);
+    --accent-hover: rgba(28, 28, 30, 0.45);
+    --accent-hi: #3a3a40;
+    --accent-lo: #1c1c1e;
+    --on-accent: #ffffff;
+    --accent-2: #5a5a62;
+    --text: #121214;
+    --muted: #6a6a72;
+    --danger: #b23a38;
+    --danger-bg: rgba(178, 58, 56, 0.1);
+    --danger-line: rgba(178, 58, 56, 0.34);
+    --danger-text: #8d2c2a;
+    --ok: #3f7d57;
+    --info-text: #3a3a40;
+    --wash: rgba(18, 18, 20, 0.07);
+    --wash-soft: rgba(18, 18, 20, 0.04);
+    --gloss: rgba(255, 255, 255, 0.8);
+    --sink: rgba(18, 18, 20, 0.05);
+    --scrim: rgba(30, 30, 34, 0.34);
+    --shadow: rgba(0, 0, 0, 0.14);
+    --power-hi: #ffffff;
+    --power-lo: #e3e3e6;
+    --blob-opacity: 0.16;
 }
 
 * {
@@ -50,14 +179,14 @@ body {
     position: absolute;
     border-radius: 50%;
     filter: blur(78px);
-    opacity: 0.26;
+    opacity: var(--blob-opacity);
     animation: drift 26s ease-in-out infinite alternate;
     transition: opacity 0.8s;
 }
 
-.blob.a { width: 340px; height: 340px; left: -18%; top: -10%; background: var(--gold); }
-.blob.b { width: 320px; height: 320px; right: -20%; top: 18%; background: var(--blue); animation-duration: 33s; }
-.blob.c { width: 300px; height: 300px; left: 10%; bottom: -14%; background: var(--gold); animation-duration: 29s; }
+.blob.a { width: 340px; height: 340px; left: -18%; top: -10%; background: var(--accent); }
+.blob.b { width: 320px; height: 320px; right: -20%; top: 18%; background: var(--accent-2); animation-duration: 33s; }
+.blob.c { width: 300px; height: 300px; left: 10%; bottom: -14%; background: var(--accent); animation-duration: 29s; }
 
 body.connected .blob { opacity: 0.42; }
 
@@ -91,7 +220,7 @@ body.connected .blob { opacity: 0.42; }
 }
 
 .titlebar .name i {
-    color: var(--gold);
+    color: var(--accent);
     font-style: normal;
 }
 
@@ -111,7 +240,7 @@ body.connected .blob { opacity: 0.42; }
     transition: background 0.15s, color 0.15s;
 }
 
-.winbtn:hover { background: rgba(255, 255, 255, 0.07); color: var(--text); }
+.winbtn:hover { background: var(--wash); color: var(--text); }
 .winbtn.close:hover { background: #c4362f; color: #fff; }
 
 /* ---------- каркас ---------- */
@@ -150,7 +279,7 @@ main::-webkit-scrollbar-thumb { background: var(--outline); border-radius: 4px; 
 .tiny { font-size: 11px; }
 .danger { color: var(--danger); }
 .ok { color: var(--ok); }
-.gold { color: var(--gold); }
+.gold { color: var(--accent); }
 .row { display: flex; align-items: center; gap: 10px; }
 .grow { flex: 1; min-width: 0; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -159,7 +288,7 @@ button, .btn {
     font: inherit;
     font-weight: 500;
     color: var(--text);
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--wash-soft);
     border: 1px solid var(--outline);
     border-radius: 12px;
     padding: 11px 16px;
@@ -167,14 +296,14 @@ button, .btn {
     transition: border-color 0.15s, background 0.15s, transform 0.08s;
 }
 
-button:hover { border-color: rgba(207, 170, 98, 0.55); }
+button:hover { border-color: var(--accent-hover); }
 button:active { transform: scale(0.985); }
 button:disabled { opacity: 0.45; cursor: default; transform: none; border-color: var(--outline); }
 
 button.primary {
-    background: linear-gradient(180deg, #dfbb72, #c09347);
+    background: linear-gradient(180deg, var(--accent-hi), var(--accent-lo));
     border-color: transparent;
-    color: #1a1408;
+    color: var(--on-accent);
     font-weight: 600;
 }
 
@@ -186,7 +315,7 @@ input {
     width: 100%;
     font: inherit;
     color: var(--text);
-    background: rgba(10, 14, 23, 0.55);
+    background: var(--sink);
     border: 1px solid var(--outline);
     border-radius: 12px;
     padding: 11px 13px;
@@ -194,7 +323,7 @@ input {
     user-select: text;
 }
 
-input:focus { outline: none; border-color: var(--gold); }
+input:focus { outline: none; border-color: var(--accent); }
 
 label.field { display: block; margin-bottom: 10px; }
 label.field > span { display: block; font-size: 11px; color: var(--muted); margin: 0 0 5px 4px; }
@@ -206,8 +335,8 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     margin-bottom: 10px;
 }
 
-.msg.err { background: rgba(224, 91, 91, 0.12); border: 1px solid rgba(224, 91, 91, 0.35); color: #f0b4b4; }
-.msg.info { background: var(--gold-soft); border: 1px solid rgba(207, 170, 98, 0.4); color: #e8d3a8; }
+.msg.err { background: var(--danger-bg); border: 1px solid var(--danger-line); color: var(--danger-text); }
+.msg.info { background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--info-text); }
 
 /* ---------- вход ---------- */
 
@@ -225,7 +354,7 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     border-radius: 22px;
     align-self: center;
     margin-bottom: 16px;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 18px 40px var(--shadow);
 }
 
 #auth h1 {
@@ -277,8 +406,8 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     height: 186px;
     border-radius: 50%;
     border: 0;
-    background: radial-gradient(circle at 50% 35%, rgba(38, 52, 80, 0.9), rgba(16, 23, 38, 0.95));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 20px 44px rgba(0, 0, 0, 0.45);
+    background: radial-gradient(circle at 50% 35%, var(--power-hi), var(--power-lo));
+    box-shadow: inset 0 1px 0 var(--gloss), 0 20px 44px var(--shadow);
     display: grid;
     place-items: center;
     cursor: pointer;
@@ -300,15 +429,15 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
 .power:disabled { cursor: default; transform: none; }
 
 body.connected .power::before {
-    border-color: var(--gold);
-    box-shadow: 0 0 34px rgba(207, 170, 98, 0.4), inset 0 0 22px rgba(207, 170, 98, 0.16);
+    border-color: var(--accent);
+    box-shadow: 0 0 34px var(--accent-line), inset 0 0 22px var(--accent-soft);
 }
 
-body.connected .power svg { stroke: var(--gold); }
+body.connected .power svg { stroke: var(--accent); }
 
 body.busy .power::before {
     border-color: transparent;
-    border-top-color: var(--gold);
+    border-top-color: var(--accent);
     animation: spin 1s linear infinite;
 }
 
@@ -330,7 +459,7 @@ body.connected #stateText { color: var(--text); }
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 4px;
-    background: rgba(10, 14, 23, 0.55);
+    background: var(--sink);
     border: 1px solid var(--outline);
     border-radius: 14px;
     padding: 4px;
@@ -346,9 +475,9 @@ body.connected #stateText { color: var(--text); }
 }
 
 .segmented button[aria-selected="true"] {
-    background: rgba(255, 255, 255, 0.07);
-    color: var(--gold);
-    box-shadow: inset 0 0 0 1px rgba(207, 170, 98, 0.35);
+    background: var(--wash);
+    color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 
 /* ---------- строки ---------- */
@@ -368,12 +497,12 @@ body.connected #stateText { color: var(--text); }
 .bar {
     height: 5px;
     border-radius: 999px;
-    background: rgba(10, 14, 23, 0.6);
+    background: var(--sink);
     overflow: hidden;
     margin: 10px 0 4px;
 }
 
-.bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), #e6c98d); }
+.bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hi)); }
 
 .pick {
     display: flex;
@@ -390,9 +519,9 @@ body.connected #stateText { color: var(--text); }
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--gold);
+    background: var(--accent);
     flex: none;
-    box-shadow: 0 0 10px var(--gold);
+    box-shadow: 0 0 10px var(--accent);
 }
 
 .chev { color: var(--muted); font-size: 18px; line-height: 1; }
@@ -403,7 +532,7 @@ body.connected #stateText { color: var(--text); }
     position: fixed;
     inset: 0;
     z-index: 20;
-    background: rgba(6, 9, 16, 0.6);
+    background: var(--scrim);
     backdrop-filter: blur(6px);
     display: flex;
     align-items: flex-end;
@@ -438,7 +567,7 @@ body.connected #stateText { color: var(--text); }
     position: fixed;
     inset: 0;
     z-index: 30;
-    background: rgba(6, 9, 16, 0.66);
+    background: var(--scrim);
     backdrop-filter: blur(7px);
     display: flex;
     align-items: center;
@@ -455,7 +584,7 @@ body.connected #stateText { color: var(--text); }
     border-radius: 20px;
     padding: 20px 18px 16px;
     text-align: center;
-    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
+    box-shadow: 0 22px 60px var(--shadow);
     animation: pop 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -467,9 +596,9 @@ body.connected #stateText { color: var(--text); }
 .modal button.block:last-child { margin-bottom: 0; }
 
 button.danger {
-    background: rgba(224, 91, 91, 0.12);
-    border-color: rgba(224, 91, 91, 0.4);
-    color: #f0b4b4;
+    background: var(--danger-bg);
+    border-color: var(--danger-line);
+    color: var(--danger-text);
 }
 
 button.danger:hover { border-color: var(--danger); }
@@ -483,18 +612,18 @@ button.danger:hover { border-color: var(--danger); }
     padding: 12px;
     margin-bottom: 8px;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--wash-soft);
     border: 1px solid transparent;
 }
 
-.server[aria-selected="true"] { border-color: var(--gold); background: var(--gold-soft); }
+.server[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .server .flag { font-size: 20px; }
 
 .spinner {
     width: 15px;
     height: 15px;
     border: 2px solid var(--outline);
-    border-top-color: var(--gold);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     display: inline-block;
@@ -516,10 +645,10 @@ button.danger:hover { border-color: var(--danger); }
     place-items: center;
     font-size: 22px;
     font-weight: 600;
-    color: var(--gold);
+    color: var(--accent);
     border-radius: 50%;
-    background: var(--gold-soft);
-    border: 1px solid rgba(207, 170, 98, 0.4);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
 }
 
 /* команда пакетного менеджера длинная — пусть переносится, а не режет окно */
@@ -532,5 +661,62 @@ button.danger:hover { border-color: var(--danger); }
 .mono {
     font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
     font-size: 12px;
-    color: var(--gold);
+    color: var(--accent);
 }
+
+/* ---------- выбор оформления ---------- */
+
+/* Образцы нарисованы теми же переменными, что и всё приложение: на каждом
+   стоит свой data-theme. Поэтому цвета темы описаны ровно в одном месте, а
+   не продублированы отдельно для картинки. */
+.themes {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.swatch {
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    display: block;
+}
+
+.swatch .preview {
+    height: 58px;
+    border-radius: 12px;
+    background: var(--bg);
+    border: 1px solid var(--outline);
+    padding: 7px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: border-color 0.15s;
+}
+
+.swatch[aria-selected="true"] .preview {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.swatch .dots { display: flex; gap: 4px; }
+.swatch .dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+.swatch .dots i:first-child { background: var(--accent); }
+.swatch .dots i:last-child { background: var(--accent-2); }
+
+.swatch .lines { display: flex; flex-direction: column; gap: 4px; }
+.swatch .lines i { height: 4px; border-radius: 3px; display: block; }
+.swatch .lines i:first-child { width: 100%; background: var(--text); opacity: 0.75; }
+.swatch .lines i:last-child { width: 58%; background: var(--muted); opacity: 0.7; }
+
+.swatch .title {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+}
+
+.swatch[aria-selected="true"] .title { color: var(--accent); font-weight: 600; }

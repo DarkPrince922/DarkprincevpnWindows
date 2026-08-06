@@ -5,6 +5,10 @@
     <meta charset="utf-8">
     <title>DarkPrince VPN</title>
     <link rel="stylesheet" href="app.css">
+    <script>
+        // до первой отрисовки, иначе светлая тема мигает тёмным
+        document.documentElement.dataset.theme = localStorage.getItem("dp_theme") || "night";
+    </script>
 </head>
 
 <body>
@@ -18,6 +22,9 @@
         <img src="logo.png" alt="" data-tauri-drag-region>
         <span class="name" data-tauri-drag-region>DarkPrince <i>VPN</i></span>
         <span class="spacer" data-tauri-drag-region></span>
+        <button class="winbtn" id="themeButton" title="Оформление">
+            <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M12 2.5a9.5 9.5 0 0 1 0 19z" fill="currentColor" /></svg>
+        </button>
         <button class="winbtn" id="minimize" title="Свернуть">
             <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 5.5h11" stroke="currentColor" stroke-width="1.2" /></svg>
         </button>
@@ -234,6 +241,16 @@
 
             <button class="primary block" id="updateNow">Обновить</button>
             <button class="ghost small block" id="updateLater">Не сейчас</button>
+        </div>
+    </div>
+
+
+    <!-- ================= ОФОРМЛЕНИЕ ================= -->
+    <div class="sheet hidden" id="themeSheet">
+        <div class="panel">
+            <div class="grip"></div>
+            <p class="section">Оформление</p>
+            <div class="themes" id="themeList"></div>
         </div>
     </div>
 
