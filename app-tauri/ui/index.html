@@ -90,6 +90,9 @@
         <!-- ================= ГЛАВНОЕ ================= -->
         <section id="home" class="hidden">
             <div class="power-wrap">
+                <!-- Карта живёт под кнопкой: она подсказывает, куда идёт
+                     трафик, но спорить с кнопкой за внимание не должна. -->
+                <canvas class="map" id="map" aria-hidden="true"></canvas>
                 <button class="power" id="power" title="Подключиться">
                     <svg viewBox="0 0 24 24" stroke-linecap="round">
                         <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
@@ -114,7 +117,8 @@
                     <span class="dot"></span>
                     <span class="grow">
                         <span class="ellipsis" id="serverName" style="display:block">Загружаю подписку…</span>
-                        <span class="tiny muted" id="serverTransport"></span>
+                        <span class="tiny muted ellipsis" id="serverDesc" style="display:none"></span>
+                        <span class="badges" id="serverTransport"></span>
                     </span>
                     <span class="chev">›</span>
                 </button>
@@ -260,6 +264,7 @@
     <script src="api.js"></script>
     <script src="jsQR.min.js"></script>
     <script src="guest.js"></script>
+    <script src="map.js"></script>
     <script src="app.js"></script>
 </body>
 

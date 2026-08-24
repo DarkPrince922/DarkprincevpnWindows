@@ -27,10 +27,11 @@ jobs:
         working-directory: app-tauri/engine
         run: cargo test
 
-      # Разбор гостевой ссылки — чистая функция с кучей краевых случаев.
-      # Node на runner'е уже есть, свой тест-раннер ему не нужен.
-      - name: Тесты разбора ссылки
-        run: node --test app-tauri/ui/guest.test.js
+      # Разбор гостевой ссылки и разбор имени узла для карты — чистые
+      # функции с кучей краевых случаев. Node на runner'е уже есть,
+      # свой тест-раннер ему не нужен.
+      - name: Тесты разбора
+        run: node --test app-tauri/ui/guest.test.js app-tauri/ui/map.test.js
 
   build:
     name: Собрать приложение

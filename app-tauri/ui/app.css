@@ -406,11 +406,33 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
 
 /* ---------- кнопка подключения ---------- */
 
+/* Отступ сверху заметно больше нижнего, и это не про воздух: в этой полосе
+   проходит маршрут. Кнопка занимает всю середину карты, и без запаса дуга с
+   подписью страны просто ушли бы под неё. */
 .power-wrap {
+    position: relative;
     display: grid;
     place-items: center;
-    padding: 18px 0 6px;
+    padding: 72px 0 6px;
 }
+
+/* Карта выходит за поля main: у неё растворяются края, и обрезать её ровно
+   по колонке значило бы вернуть тот самый прямоугольник, от которого
+   растворение и спасает. Горизонтальную полосу main не покажет — у него
+   overflow-x: hidden. */
+.map {
+    position: absolute;
+    top: 0;
+    left: -18px;
+    /* Ширину и высоту задаём числом, а не парой left/right: canvas —
+       замещаемый элемент, у него есть свой размер 300×150, и width: auto
+       возьмёт именно его, а не растянется по краям. */
+    width: calc(100% + 36px);
+    height: calc(100% + 10px);
+    pointer-events: none;
+}
+
+.power { z-index: 1; }
 
 .power {
     position: relative;
@@ -777,3 +799,44 @@ button.danger:hover { border-color: var(--danger); }
     justify-content: space-between;
     gap: 12px;
 }
+
+/* ---------- значки транспорта ---------- */
+
+/* Цвет здесь несёт смысл: по нему узел узнаётся с одного взгляда, не читая
+   букв. Палитра общая с приложением на Android — один и тот же сервер в двух
+   клиентах должен выглядеть одинаково. Обводка и кегль намеренно мелкие: это
+   подпись под названием, а не заголовок.
+
+   Тон держим в виде трёх чисел, а не готового цвета: из одного значения
+   нужны и текст, и заливка, и рамка с разной прозрачностью, а color-mix
+   знают не все webview, с которыми клиент встречается на Linux. */
+.badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.badge {
+    --tint: 126, 140, 166;
+    padding: 1px 6px;
+    border: 1px solid rgba(var(--tint), 0.42);
+    border-radius: 5px;
+    background: rgba(var(--tint), 0.09);
+    color: rgb(var(--tint));
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    line-height: 1.5;
+}
+
+.badge[data-kind="proto"]    { --tint: 217, 169, 78; }
+.badge[data-kind="fast"]     { --tint: 53, 191, 184; }
+.badge[data-kind="reality"]  { --tint: 155, 107, 224; }
+.badge[data-kind="tls"]      { --tint: 78, 147, 217; }
+.badge[data-kind="grpc"]     { --tint: 222, 106, 120; }
+.badge[data-kind="xhttp"]    { --tint: 63, 179, 196; }
+.badge[data-kind="ws"]       { --tint: 73, 177, 131; }
+.badge[data-kind="tcp"]      { --tint: 126, 140, 166; }

@@ -19,6 +19,22 @@ const state = {
     usingSharedSubscription: false,
 };
 
+// Состояние карты под кнопкой. Живёт рядом с остальным состоянием, а не у
+// своего цикла отрисовки внизу файла: renderServer трогает его задолго до
+// того, как выполнение доберётся до конца скрипта.
+//
+// Кадры считаем, только когда есть что показывать: пока туннель молчит,
+// картинка неподвижна, и перерисовывать её шестьдесят раз в секунду значит
+// впустую греть процессор — на ноутбуке это заметно по кулеру.
+const map = {
+    canvas: document.querySelector("#map"),
+    glow: 0,      // 0 — огни погашены, 1 — маршрут горит
+    spark: 0,     // положение искры на дуге
+    label: null,  // «🇵🇱 Польша» — считается при выборе сервера
+    dirty: true,
+    last: 0,
+};
+
 const money = (kopeks) =>
     `${(Number(kopeks || 0) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
 
@@ -787,7 +803,55 @@ function renderSubscription() {
 function renderServer() {
     const server = state.servers[state.selected];
     $("#serverName").textContent = server ? server.name : "Сервер не выбран";
-    $("#serverTransport").textContent = server ? server.transport : "";
+
+    // Описание задаётся в панели каждому узлу отдельно и есть далеко не у
+    // всех: пустую строку прячем целиком, иначе под названием повиснет
+    // пустое место.
+    const description = $("#serverDesc");
+    description.textContent = server && server.description ? server.description : "";
+    description.style.display = description.textContent ? "block" : "none";
+
+    $("#serverTransport").innerHTML = badges(server && server.transport);
+
+    map.label = server ? DPMap.countryLabel(DPMap.countryOf(server.name)) : null;
+    map.dirty = true;
+}
+
+/**
+ * Раскраска значков транспорта.
+ *
+ * Один цвет на семейство, а не на каждое слово: reality и tls — про то, чем
+ * прикрыт трафик, grpc и xhttp — про то, как он упакован, и разводить их по
+ * оттенкам полезнее, чем красить каждое слово во что попало.
+ */
+function badgeKind(token) {
+    switch (token.toLowerCase()) {
+        case "vless": case "vmess": case "trojan":
+        case "shadowsocks": case "ss":
+            return "proto";
+        case "hysteria": case "hysteria2": case "tuic": case "wireguard":
+            return "fast";
+        case "reality":
+            return "reality";
+        case "tls": case "xtls":
+            return "tls";
+        case "grpc":
+            return "grpc";
+        case "xhttp": case "splithttp":
+            return "xhttp";
+        case "ws": case "websocket": case "httpupgrade":
+            return "ws";
+        default:
+            return "tcp";
+    }
+}
+
+/** Значки транспорта одной строкой. Пустой список даёт пустую строку. */
+function badges(parts) {
+    if (!Array.isArray(parts)) return "";
+    return parts
+        .map((part) => `<span class="badge" data-kind="${badgeKind(part)}">${escape(part)}</span>`)
+        .join("");
 }
 
 // Пороги те же, что в приложении на Android: список серверов должен
@@ -818,7 +882,10 @@ function renderServerList() {
         button.setAttribute("aria-selected", String(index === state.selected));
         button.innerHTML =
             `<span class="grow"><span class="ellipsis" style="display:block">${escape(server.name)}</span>` +
-            `<span class="tiny muted">${escape(server.transport)}</span></span>` +
+            (server.description
+                ? `<span class="tiny muted ellipsis">${escape(server.description)}</span>`
+                : "") +
+            `<span class="badges">${badges(server.transport)}</span></span>` +
             pingChip(state.pings[index]);
         button.addEventListener("click", async () => {
             state.selected = index;
@@ -1090,6 +1157,7 @@ function applyTheme(id) {
     document.documentElement.dataset.theme = known;
     localStorage.setItem("dp_theme", known);
     renderThemes();
+    map.dirty = true; // акцент и светлота сменились — снимок берём другой
 }
 
 $("#themeButton").addEventListener("click", () => {
@@ -1100,3 +1168,50 @@ $("#themeButton").addEventListener("click", () => {
 $("#themeSheet").addEventListener("click", (event) => {
     if (event.target === $("#themeSheet")) $("#themeSheet").classList.add("hidden");
 });
+
+// ================= карта =================
+
+function mapView() {
+    const style = getComputedStyle(document.documentElement);
+    const server = state.servers[state.selected];
+    const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+    return {
+        serverName: server ? server.name : null,
+        label: map.label,
+        // Светлые темы объявляют себя сами — держать их список вторым местом
+        // значит однажды забыть в нём новую тему.
+        light: read("color-scheme", "dark") === "light",
+        accent: read("--accent", "#cfaa62"),
+        panel: read("--surface-solid", "#121a29"),
+        text: read("--text", "#edf0f7"),
+    };
+}
+
+function mapFrame(now) {
+    requestAnimationFrame(mapFrame);
+    if (now - map.last < 33) return; // тридцати кадров в секунду карте хватает
+    const step = (now - map.last) / 420;
+    map.last = now;
+
+    const target = state.connected && !state.busy ? 1 : 0;
+    if (Math.abs(map.glow - target) > 0.002) {
+        const delta = target - map.glow;
+        map.glow += Math.sign(delta) * Math.min(step, Math.abs(delta));
+        map.dirty = true;
+    } else {
+        map.glow = target;
+    }
+    if (map.glow > 0.01) {
+        map.spark = (now % 2600) / 2600;
+        map.dirty = true;
+    }
+
+    if (!map.dirty) return;
+    // Снимок планеты грузится с диска не мгновенно. Пока его нет, рисовать
+    // нечего, и отметку «надо перерисовать» мы не снимаем — иначе первый
+    // кадр пропал бы, а следующего повода не нашлось бы до подключения.
+    if (DPMap.drawMap(map.canvas, mapView(), map.glow, map.spark)) map.dirty = false;
+}
+
+window.addEventListener("resize", () => { map.dirty = true; });
+requestAnimationFrame(mapFrame);

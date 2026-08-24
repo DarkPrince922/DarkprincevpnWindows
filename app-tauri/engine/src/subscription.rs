@@ -20,16 +20,59 @@ pub struct Server {
     pub network: String,
     /// tls, reality или none.
     pub security: String,
+    /// Протокол так, как его назвала панель: vless, hysteria2, tuic…
+    ///
+    /// Раньше незнакомый протокол молча пропускался, и узел оставался с
+    /// заготовкой «tcp» — в списке он врал про себя: сервер с именем
+    /// «Sweden | HYSTERIA2» показывался как обычный tcp.
+    pub protocol: String,
+    /// Server Description из панели Remnawave. Задаётся каждому хосту
+    /// отдельно и приходит только в формате XRAY_JSON.
+    pub description: Option<String>,
 }
 
 impl Server {
-    /// Подпись под именем сервера: «vless · reality · xhttp».
-    pub fn transport_label(&self) -> String {
-        let mut parts = vec![self.network.clone()];
-        if self.security != "none" && !self.security.is_empty() {
-            parts.insert(0, self.security.clone());
+    /// Подпись под именем сервера по частям: протокол, шифрование, транспорт.
+    ///
+    /// Списком, а не строкой: в интерфейсе каждая часть рисуется своей
+    /// меткой и своим цветом, и склеивать их здесь, чтобы там разрезать
+    /// обратно, незачем.
+    ///
+    /// Повторы отбрасываются: у Hysteria панель кладёт одно и то же имя и в
+    /// протокол, и в сеть, и подпись выходила «hysteria · tls · hysteria».
+    pub fn transport_parts(&self) -> Vec<String> {
+        let mut parts: Vec<String> = Vec::new();
+        let mut push = |value: &str| {
+            let value = value.trim().to_lowercase();
+            if value.is_empty() || value == "none" {
+                return;
+            }
+            if parts.iter().any(|kept| *kept == value) {
+                return;
+            }
+            parts.push(value);
+        };
+
+        push(&self.protocol);
+        push(&self.security);
+        // У Hysteria2, TUIC и WireGuard транспорта поверх нет: сам протокол
+        // и есть транспорт, приписывать рядом «tcp» было бы неправдой.
+        if !self.carries_own_transport() {
+            push(&self.network);
         }
-        parts.join(" · ")
+        parts
+    }
+
+    /// Подпись одной строкой — там, где нет места на отдельные метки.
+    pub fn transport_label(&self) -> String {
+        self.transport_parts().join(" · ")
+    }
+
+    fn carries_own_transport(&self) -> bool {
+        matches!(
+            self.protocol.as_str(),
+            "hysteria" | "hysteria2" | "tuic" | "wireguard"
+        )
     }
 }
 
@@ -79,12 +122,19 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
         let mut port = 443u16;
         let mut network = "tcp".to_string();
         let mut security = "none".to_string();
+        let mut protocol = String::new();
 
         for outbound in outbounds {
-            let protocol = outbound.get("protocol").and_then(Value::as_str).unwrap_or("");
-            if !matches!(protocol, "vless" | "vmess" | "trojan" | "shadowsocks") {
+            let name = outbound
+                .get("protocol")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_lowercase();
+            // Служебные выходы есть в каждом конфиге и узлом не являются.
+            if name.is_empty() || matches!(name.as_str(), "freedom" | "blackhole" | "dns" | "loopback") {
                 continue;
             }
+            protocol = name;
             if let Some(server) = first_server(outbound.get("settings")) {
                 if let Some(value) = server.get("address").and_then(Value::as_str) {
                     address = value.to_string();
@@ -103,6 +153,17 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
             }
             break;
         }
+
+        // Remnawave кладёт Server Description в корень конфига. Оба написания:
+        // панель отдаёт camelCase, но в самодельных шаблонах подписки
+        // встречается и с подчёркиванием.
+        let description = config
+            .get("serverDescription")
+            .or_else(|| config.get("server_description"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
 
         let name = config
             .get("remarks")
@@ -124,6 +185,8 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
             port,
             network,
             security,
+            protocol,
+            description,
         });
     }
     servers
@@ -195,10 +258,45 @@ mod tests {
         assert_eq!(servers[0].name, "DE WI-FI | Germany");
         assert_eq!(servers[0].address, "de.example.net");
         assert_eq!(servers[0].port, 443);
-        assert_eq!(servers[0].transport_label(), "reality · xhttp");
+        assert_eq!(servers[0].transport_label(), "vless · reality · xhttp");
         assert_eq!(servers[1].address, "nl.example.net");
         assert_eq!(servers[1].port, 8443);
-        assert_eq!(servers[1].transport_label(), "tls · grpc");
+        assert_eq!(servers[1].transport_label(), "trojan · tls · grpc");
+    }
+
+    /// Панель отдаёт Hysteria с одним и тем же именем в протоколе и в сети,
+    /// и подпись выходила «hysteria · tls · hysteria». Плюс раньше такой узел
+    /// вовсе не опознавался и показывался как обычный tcp.
+    #[test]
+    fn hysteria_does_not_repeat_itself() {
+        let servers = parse(
+            r#"[{"remarks":"SE | HYSTERIA2","serverDescription":"1 Гбит","outbounds":[
+                {"protocol":"hysteria2","settings":{"servers":[{"address":"se.example.net","port":443}]},
+                 "streamSettings":{"network":"hysteria","security":"tls"}}]}]"#,
+        );
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].protocol, "hysteria2");
+        assert_eq!(servers[0].transport_parts(), vec!["hysteria2", "tls"]);
+        assert_eq!(servers[0].description.as_deref(), Some("1 Гбит"));
+    }
+
+    /// Незнакомый протокол должен называть себя своим именем, а не молча
+    /// притворяться заготовкой.
+    #[test]
+    fn unknown_protocol_keeps_its_name() {
+        let servers = parse(
+            r#"[{"remarks":"X","outbounds":[
+                {"protocol":"freedom","tag":"direct"},
+                {"protocol":"chtoto-novoe","settings":{"address":"x.example.net","port":99}}]}]"#,
+        );
+        assert_eq!(servers[0].protocol, "chtoto-novoe");
+        assert!(servers[0].transport_parts().contains(&"chtoto-novoe".to_string()));
+    }
+
+    #[test]
+    fn description_is_absent_when_panel_did_not_set_it() {
+        let servers = parse(SUBSCRIPTION);
+        assert!(servers[0].description.is_none());
     }
 
     #[test]
