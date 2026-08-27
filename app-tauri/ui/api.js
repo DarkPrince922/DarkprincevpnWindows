@@ -62,6 +62,13 @@ const store = {
     },
 };
 
+/// Хвост ?subscription_id=… для адресов кабинета, которые умеют мультитариф.
+/// Пусто, если номера нет: тогда кабинет решает сам, и это правильно —
+/// подписка у человека одна.
+function forSub(subscriptionId) {
+    return subscriptionId ? `?subscription_id=${encodeURIComponent(subscriptionId)}` : "";
+}
+
 function messageForStatus(status, serverMessage) {
     if (serverMessage) return serverMessage;
     if (status === 400 || status === 422) return "Неверные данные. Проверьте введённые значения.";
@@ -200,16 +207,26 @@ const api = {
             method: "POST",
             body: { tariff_id: tariffId, period_days: periodDays },
         }),
-    renewalOptions: () => request("cabinet/subscription/renewal-options"),
-    renew: (periodDays) =>
-        request("cabinet/subscription/renew", { method: "POST", body: { period_days: periodDays } }),
+    // Номер подписки обязателен при мультитарифе: без него кабинет выбирает
+    // «текущую» сам, и продление уходит не в ту, на которую нажали, а цены
+    // показываются от чужой подписки.
+    renewalOptions: (subscriptionId) =>
+        request(`cabinet/subscription/renewal-options${forSub(subscriptionId)}`),
+    renew: (periodDays, subscriptionId) =>
+        request(`cabinet/subscription/renew${forSub(subscriptionId)}`, {
+            method: "POST",
+            body: { period_days: periodDays },
+        }),
     balance: () => request("cabinet/balance"),
 
     // --- устройства, промокоды, рефералы ---
     devices: (subscriptionId) =>
-        request(`cabinet/subscription/devices${subscriptionId ? `?subscription_id=${subscriptionId}` : ""}`),
-    removeDevice: (hwid) =>
-        request(`cabinet/subscription/devices/${encodeURIComponent(hwid)}`, { method: "DELETE" }),
+        request(`cabinet/subscription/devices${forSub(subscriptionId)}`),
+    removeDevice: (hwid, subscriptionId) =>
+        request(
+            `cabinet/subscription/devices/${encodeURIComponent(hwid)}${forSub(subscriptionId)}`,
+            { method: "DELETE" }
+        ),
     activatePromo: (code) =>
         request("cabinet/promocode/activate", { method: "POST", body: { code } }),
     referral: () => request("cabinet/referral"),

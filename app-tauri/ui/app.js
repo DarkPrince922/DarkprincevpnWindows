@@ -588,7 +588,7 @@ async function pickPeriod(tariff) {
 $("#renewButton").addEventListener("click", async () => {
     let options;
     try {
-        options = await api.renewalOptions();
+        options = await api.renewalOptions(state.subscription?.id);
     } catch (error) {
         message($("#homeMessage"), error.message);
         return;
@@ -608,7 +608,8 @@ $("#renewButton").addEventListener("click", async () => {
             right: money(period.price),
         })),
         async (index) => {
-            await buy(() => api.renew(periods[index].days), "Подписка продлена.");
+            const sid = state.subscription?.id;
+            await buy(() => api.renew(periods[index].days, sid), "Подписка продлена.");
         },
         state.balanceKopeks === null ? "" : `На балансе ${money(state.balanceKopeks)}`
     );
@@ -658,7 +659,7 @@ function confirmRemoveDevice(device) {
             if (index !== 0) return;
             message($("#homeMessage"), "Отключаю…", "info");
             try {
-                await api.removeDevice(hwid);
+                await api.removeDevice(hwid, state.subscription?.id);
                 await loadSubscription();
                 message($("#homeMessage"), `Устройство «${name}» отключено.`, "info");
             } catch (error) {
