@@ -840,3 +840,56 @@ button.danger:hover { border-color: var(--danger); }
 .badge[data-kind="xhttp"]    { --tint: 63, 179, 196; }
 .badge[data-kind="ws"]       { --tint: 73, 177, 131; }
 .badge[data-kind="tcp"]      { --tint: 126, 140, 166; }
+
+/* Строка с переключателем: подпись слева, флажок справа. Отдельным блоком,
+   потому что остальные строки настроек — кнопки, а тут состояние. */
+.switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    cursor: pointer;
+}
+
+.switch-row + .switch-row {
+    border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+}
+
+.switch-row input[type="checkbox"] {
+    appearance: none;
+    width: 40px;
+    height: 22px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.15s;
+    flex: none;
+}
+
+.switch-row input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s;
+}
+
+.switch-row input[type="checkbox"]:checked {
+    background: var(--accent);
+}
+
+.switch-row input[type="checkbox"]:checked::after {
+    transform: translateX(18px);
+}
+
+.hint {
+    margin: 6px 0 0;
+    font-size: 11px;
+    opacity: 0.6;
+}

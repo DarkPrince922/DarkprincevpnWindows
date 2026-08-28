@@ -289,6 +289,30 @@ fn quit_app(app_handle: tauri::AppHandle) {
     quit(&app_handle);
 }
 
+/// Запущено ли приложение системой при входе, а не человеком.
+///
+/// Окно при таком запуске не показываем — приложение уходит в трей.
+fn started_by_system() -> bool {
+    std::env::args().any(|arg| arg == "--autostart")
+}
+
+#[tauri::command]
+fn autostart_enabled(app_handle: tauri::AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app_handle.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app_handle: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let launcher = app_handle.autolaunch();
+    if enabled {
+        launcher.enable().map_err(|e| e.to_string())
+    } else {
+        launcher.disable().map_err(|e| e.to_string())
+    }
+}
+
 #[tauri::command]
 fn open_url(url: String) {
     // ссылку открываем в браузере по умолчанию
@@ -421,6 +445,14 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_window(app);
         }))
+        // Автозапуск. Аргумент --autostart отличает запуск системой от
+        // запуска руками: в первом случае окно не показываем, приложение
+        // живёт в трее — иначе каждое включение компьютера начиналось бы с
+        // окна поверх рабочего стола.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart"]),
+        ))
         // Обновления: плагин скачивает установщик и проверяет его подпись.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
@@ -440,6 +472,14 @@ fn main() {
             ));
 
             allow_wakeup_from_normal_user(&app.config().identifier);
+
+            // Окно объявлено скрытым, поэтому показываем его сами — но
+            // только если запустил человек. При запуске системой приложение
+            // поднимается сразу в трей: окно поверх рабочего стола на каждом
+            // включении компьютера никому не нужно.
+            if !started_by_system() {
+                show_window(app.handle());
+            }
 
             // следы прошлого запуска, если его завершили жёстко
             Vpn::clear_stale_state(&core_dir);
@@ -514,6 +554,8 @@ fn main() {
             status,
             ping_servers,
             restart_elevated,
+            autostart_enabled,
+            set_autostart,
             open_url,
             quit_app,
             http,

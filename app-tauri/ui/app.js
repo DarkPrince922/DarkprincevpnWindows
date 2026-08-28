@@ -382,6 +382,7 @@ async function loadSubscription() {
     }
 
     const loaded = await loadServers(url);
+    if (loaded) await autoConnectOnce();
     // Как на Android: заработала собственная подписка — больше не занимаем
     // место в лимите устройств владельца общей ссылки.
     if (loaded && ownUrl && sharedUrl && ownUrl !== sharedUrl) {
@@ -1112,6 +1113,10 @@ async function startUpdate(now, later) {
 // ================= старт =================
 
 (async () => {
+    // Раньше входа: галочки должны показывать правду с первого кадра, а не
+    // после того, как подписка загрузится.
+    await initAutostart();
+
     if (store.loggedIn || store.guestSubscription) await enter();
     else $("#auth").classList.remove("hidden");
 
@@ -1216,3 +1221,52 @@ function mapFrame(now) {
 
 window.addEventListener("resize", () => { map.dirty = true; });
 requestAnimationFrame(mapFrame);
+
+// ================= ЗАПУСК ВМЕСТЕ С СИСТЕМОЙ =================
+
+/// Подключаться ли самим после загрузки подписки. Хранится на этой машине:
+/// к аккаунту отношения не имеет, на другом компьютере решение своё.
+const autoConnectWanted = () => localStorage.getItem("dp_autoconnect") === "1";
+
+/// Подключаемся не чаще одного раза за запуск. loadSubscription зовут и
+/// кнопкой «Обновить», и после покупки — а самовольно поднимать туннель в
+/// ответ на нажатие «Обновить» приложение не должно.
+let autoConnectDone = false;
+
+async function autoConnectOnce() {
+    if (autoConnectDone) return;
+    autoConnectDone = true;
+    if (!autoConnectWanted()) return;
+    if (state.connected || !state.servers.length) return;
+    await connect();
+}
+
+async function initAutostart() {
+    const box = $("#autostart");
+    const auto = $("#autoconnect");
+    if (!box || !auto) return;
+
+    // Состояние галочки — не наша выдумка, а то, что реально прописано в
+    // системе: человек мог убрать автозапуск сам, мимо приложения.
+    try {
+        box.checked = await invoke("autostart_enabled");
+    } catch (error) {
+        box.checked = false;
+    }
+    auto.checked = autoConnectWanted();
+
+    box.addEventListener("change", async () => {
+        const wanted = box.checked;
+        try {
+            await invoke("set_autostart", { enabled: wanted });
+        } catch (error) {
+            // не получилось — возвращаем галочку, а не врём про состояние
+            box.checked = !wanted;
+            message($("#homeMessage"), `Не удалось изменить автозапуск: ${error}`);
+        }
+    });
+
+    auto.addEventListener("change", () => {
+        localStorage.setItem("dp_autoconnect", auto.checked ? "1" : "0");
+    });
+}
