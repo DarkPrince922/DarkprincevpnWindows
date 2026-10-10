@@ -192,8 +192,14 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
     servers
 }
 
-/// Адрес сервера лежит по-разному: у vless и vmess в `vnext`, у trojan и
-/// shadowsocks в `servers`.
+/// Адрес сервера лежит по-разному: у vless и vmess в списке `vnext`, у trojan
+/// и shadowsocks в списке `servers`, а у Hysteria — прямо в `settings`, без
+/// всякого списка: `{"version": 2, "address": …, "port": …}`. Новые версии
+/// Xray принимают такую плоскую запись и для vless.
+///
+/// Без плоского случая адрес у Hysteria оставался пустым. Подключение в
+/// режиме прокси при этом работало, а «весь трафик» отказывал: без адреса
+/// нельзя проложить маршрут до сервера мимо туннеля.
 fn first_server(settings: Option<&Value>) -> Option<&Value> {
     let settings = settings?;
     for key in ["vnext", "servers"] {
@@ -203,7 +209,7 @@ fn first_server(settings: Option<&Value>) -> Option<&Value> {
             }
         }
     }
-    None
+    settings.get("address").is_some().then_some(settings)
 }
 
 fn decode_base64(text: &str) -> Option<String> {
@@ -282,6 +288,31 @@ mod tests {
 
     /// Незнакомый протокол должен называть себя своим именем, а не молча
     /// притворяться заготовкой.
+    /// Так Hysteria выглядит в конфиге Xray на самом деле: адрес и порт прямо
+    /// в settings. Пустой адрес здесь ломал режим «весь трафик».
+    #[test]
+    fn hysteria_address_is_read_from_flat_settings() {
+        let servers = parse(
+            r#"[{"remarks":"WI-FI | Germany | HYSTERIA2","outbounds":[
+                {"protocol":"hysteria","settings":{"version":2,"address":"de.example.net","port":8443},
+                 "streamSettings":{"network":"hysteria","security":"tls"}},
+                {"protocol":"freedom","tag":"direct"}]}]"#,
+        );
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].address, "de.example.net");
+        assert_eq!(servers[0].port, 8443);
+    }
+
+    #[test]
+    fn flat_vless_address_is_read_too() {
+        let servers = parse(
+            r#"[{"remarks":"flat","outbounds":[
+                {"protocol":"vless","settings":{"address":"fi.example.net","port":443,"id":"x"},
+                 "streamSettings":{"network":"tcp","security":"reality"}}]}]"#,
+        );
+        assert_eq!(servers[0].address, "fi.example.net");
+    }
+
     #[test]
     fn unknown_protocol_keeps_its_name() {
         let servers = parse(
