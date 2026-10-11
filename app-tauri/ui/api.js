@@ -155,7 +155,10 @@ async function validToken() {
     return token;
 }
 
-const AUTH_FREE = /\/cabinet\/auth\/(deeplink|email|password|refresh)/;
+// Без токена — только вход, регистрация с нуля, подтверждение почты и
+// пароль. «email» целиком сюда нельзя: соседний /email/register без хвоста —
+// это привязка почты к уже вошедшему аккаунту, ей токен нужен.
+const AUTH_FREE = /\/cabinet\/auth\/(deeplink|email\/(login|register\/standalone|verify|resend)|password|refresh)/;
 
 // ================= доступность кабинета =================
 //
@@ -254,6 +257,18 @@ async function request(path, { method = "GET", body, raw = false } = {}) {
 }
 
 const api = {
+    me: () => request("cabinet/auth/me"),
+    // привязка почты к вошедшему аккаунту и объединение с занятой почтой
+    linkEmail: (email, password) =>
+        request("cabinet/auth/email/register", { method: "POST", body: { email, password } }),
+    verifyEmailMerge: (code) =>
+        request("cabinet/auth/email/merge/verify", { method: "POST", body: { code } }),
+    mergePreview: (token) => request(`cabinet/auth/merge/${encodeURIComponent(token)}`),
+    executeMerge: (token, keepFrom) =>
+        request(`cabinet/auth/merge/${encodeURIComponent(token)}`, {
+            method: "POST",
+            body: { keep_subscription_from: keepFrom },
+        }),
     deepLinkRequest: () => request("cabinet/auth/deeplink/request", { method: "POST", body: {} }),
     deepLinkPoll: (token) =>
         request("cabinet/auth/deeplink/poll", { method: "POST", body: { token }, raw: true }),

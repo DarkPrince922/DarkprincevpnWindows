@@ -328,6 +328,7 @@ async function loadSubscription() {
     }
 
     loadBalance(); // не ждём: баланс не мешает подключению
+    loadAccount(); // тоже не ждём: нужна только для привязки почты
     let accountError = null;
     let ownUrl = null;
     try {
@@ -789,6 +790,178 @@ async function loadServers(url) {
         message($("#homeMessage"), String(error));
         return false;
     }
+}
+
+// ================= привязка почты =================
+//
+// Кто вошёл через Telegram, может привязать почту: тогда в тот же аккаунт
+// можно входить и без Telegram. Если почта занята другим аккаунтом, бот
+// предлагает объединить их: шлёт на неё 6-значный код, показывает оба
+// аккаунта и спрашивает, чью подписку оставить. Запросы — те, что есть у
+// бота: POST /cabinet/auth/email/register, /email/merge/verify, GET и POST
+// /cabinet/auth/merge/{token}.
+
+const LINK_ERRORS = [
+    ["already linked to your account", "Эта почта уже привязана к вашему аккаунту."],
+    ["cannot be linked", "Эту почту привязать нельзя."],
+    ["not configured", "Бот сейчас не может отправлять письма. Попробуйте позже."],
+    ["Invalid confirmation code", "Неверный код. Проверьте письмо и попробуйте снова."],
+    ["Too many invalid attempts", "Слишком много неверных попыток. Начните заново."],
+    ["No pending account merge", "Время на подтверждение вышло. Начните заново."],
+    ["invalid or expired", "Время на подтверждение вышло. Начните заново."],
+    ["temporarily blocked", "Объединение пока недоступно. Попробуйте позже."],
+    ["Too many requests", "Слишком часто. Подождите минуту и попробуйте снова."],
+];
+
+function linkErrorText(error) {
+    const text = String(error?.message || error || "");
+    const known = LINK_ERRORS.find(([marker]) => text.toLowerCase().includes(marker.toLowerCase()));
+    return known ? known[1] : text || "Не получилось. Попробуйте позже.";
+}
+
+async function loadAccount() {
+    const card = $("#emailLinkCard");
+    // итог привязки показан — не затираем его обновлением экрана
+    if (card.dataset.done) return;
+    try {
+        const user = await api.me();
+        // почта уже есть — привязывать нечего
+        card.classList.toggle("hidden", Boolean(user?.email));
+        if (!user?.email) showEmailForm(card);
+    } catch {
+        card.classList.add("hidden");
+    }
+}
+
+function linkNode(tag, props = {}, children = []) {
+    const node = Object.assign(document.createElement(tag), props);
+    node.append(...[].concat(children).filter(Boolean));
+    return node;
+}
+
+function showEmailForm(card) {
+    card.innerHTML = "";
+    const note = linkNode("div", { className: "msg hidden" });
+    const email = linkNode("input", { type: "email", placeholder: "Почта", autocomplete: "email" });
+    const password = linkNode("input", { type: "password", placeholder: "Новый пароль, от 8 символов" });
+    const repeat = linkNode("input", { type: "password", placeholder: "Пароль ещё раз" });
+    const submit = linkNode("button", { className: "small", textContent: "Привязать почту" });
+    submit.addEventListener("click", async () => {
+        const address = email.value.trim();
+        const problem = !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address) ? "Проверьте адрес почты"
+            : password.value.length < 8 ? "Пароль — не короче 8 символов"
+            : password.value !== repeat.value ? "Пароли не совпадают" : "";
+        if (problem) return message(note, problem);
+        submit.disabled = true;
+        try {
+            const result = await api.linkEmail(address, password.value);
+            if (result.merge_required) return showMergeCode(card, address);
+            const linked = /linked/i.test(result.message || "");
+            showLinkDone(card, linked
+                ? `Почта ${address} привязана: теперь в этот аккаунт можно входить и по ней.`
+                : `Мы отправили письмо на ${address}. Перейдите по ссылке из него — после этого ` +
+                  "в аккаунт можно будет входить и по почте. Письма нет — проверьте «Спам».");
+        } catch (error) {
+            message(note, linkErrorText(error));
+        } finally {
+            submit.disabled = false;
+        }
+    });
+    card.append(
+        linkNode("p", { className: "hint", textContent:
+            "Привяжите почту, чтобы входить в этот аккаунт и без Telegram." }),
+        email, password, repeat,
+        linkNode("div", { className: "row", style: "margin-top:8px" }, [submit]),
+        note
+    );
+    [email, password, repeat].forEach((input) => (input.style.marginTop = "8px"));
+}
+
+function showMergeCode(card, address) {
+    card.innerHTML = "";
+    const note = linkNode("div", { className: "msg hidden" });
+    const code = linkNode("input", { type: "text", inputMode: "numeric", maxLength: 6, placeholder: "Код из письма" });
+    const submit = linkNode("button", { className: "small", textContent: "Подтвердить" });
+    const back = linkNode("button", { className: "ghost small", textContent: "Другая почта" });
+    back.addEventListener("click", () => showEmailForm(card));
+    submit.addEventListener("click", async () => {
+        const value = code.value.replace(/\D/g, "");
+        if (value.length !== 6) return message(note, "Код — 6 цифр из письма");
+        submit.disabled = true;
+        try {
+            const result = await api.verifyEmailMerge(value);
+            if (!result.merge_token) throw new Error("Бот не прислал подтверждение объединения");
+            showMergeChoice(card, result.merge_token, await api.mergePreview(result.merge_token));
+        } catch (error) {
+            message(note, linkErrorText(error));
+        } finally {
+            submit.disabled = false;
+        }
+    });
+    card.append(
+        linkNode("p", { className: "hint", textContent:
+            `Почта ${address} уже есть у другого аккаунта — их можно объединить. ` +
+            "Мы отправили на неё 6-значный код: введите его, чтобы подтвердить, что почта ваша." }),
+        code,
+        linkNode("div", { className: "row", style: "margin-top:8px" }, [submit, back]),
+        note
+    );
+    code.style.marginTop = "8px";
+}
+
+// Выбрать надо только подписку: у аккаунта она одна, остальное бот сведёт сам.
+function showMergeChoice(card, token, preview) {
+    card.innerHTML = "";
+    const note = linkNode("div", { className: "msg hidden" });
+    let keep = preview.primary.id;
+    const option = (label, user) => {
+        const sub = user.subscription;
+        const radio = linkNode("input", { type: "radio", name: "keepSub", checked: user.id === keep });
+        radio.style.width = "auto";
+        radio.addEventListener("change", () => (keep = user.id));
+        const details = [
+            sub?.end_date ? `до ${new Date(sub.end_date).toLocaleDateString("ru-RU")}` : null,
+            `баланс ${((user.balance_kopeks || 0) / 100).toLocaleString("ru-RU")} ₽`,
+            user.email || (user.username ? `@${user.username}` : null),
+        ].filter(Boolean).join(" · ");
+        return linkNode("label", { className: "switch-row" }, [
+            linkNode("span", {}, [
+                linkNode("span", { className: "hint", textContent: label }),
+                linkNode("b", { textContent: " " + (sub ? sub.tariff_name || "Подписка" : "Без подписки") }),
+                linkNode("div", { className: "hint", textContent: details }),
+            ]),
+            radio,
+        ]);
+    };
+    const submit = linkNode("button", { className: "small", textContent: "Объединить аккаунты" });
+    submit.addEventListener("click", async () => {
+        if (!confirm("Объединить аккаунты? Вторая подписка пропадёт, отменить это нельзя.")) return;
+        submit.disabled = true;
+        try {
+            const result = await api.executeMerge(token, keep);
+            store.save(result);
+            showLinkDone(card, "Аккаунты объединены: в них можно входить и через Telegram, и по почте.");
+            loadSubscription();
+        } catch (error) {
+            message(note, linkErrorText(error));
+        } finally {
+            submit.disabled = false;
+        }
+    });
+    card.append(
+        linkNode("p", { className: "hint", textContent:
+            "Какую подписку оставить? Вторая пропадёт — это нельзя будет отменить." }),
+        option("Этот аккаунт", preview.primary),
+        option("Аккаунт с почтой", preview.secondary),
+        linkNode("div", { className: "row", style: "margin-top:8px" }, [submit]),
+        note
+    );
+}
+
+function showLinkDone(card, text) {
+    card.dataset.done = "1";
+    card.innerHTML = "";
+    card.append(linkNode("p", { className: "hint", textContent: text }));
 }
 
 // Последний удачный ответ кабинета о подписках — на случай, когда он лежит.
