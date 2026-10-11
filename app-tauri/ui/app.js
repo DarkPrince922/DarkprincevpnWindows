@@ -555,13 +555,38 @@ function tariffHint(tariff) {
 }
 
 /// Сроки и цены приходят с сервера — сами ничего не считаем.
-function periodsOf(item) {
-    const raw = item.periods || item.period_prices || item.prices || {};
-    return Object.entries(raw)
-        .map(([days, price]) => ({ days: Number(days), price: Number(price) }))
-        .filter((period) => Number.isFinite(period.days) && period.days > 0)
-        .sort((a, b) => a.days - b.days);
+///
+/// Сервер присылает их списком объектов: у тарифа — в поле `periods`
+/// ([{days, price_kopeks}]), у продления — прямо в корне ответа
+/// ([{period_days, price_kopeks}]). Раньше здесь ждали словарь вида
+/// {"14": 12000}, и вместо сроков выходило «1 день · NaN ₽», а продление
+/// отвечало «продлевать нечего». Словарь по-прежнему понимаем — на случай
+/// самодельного кабинета.
+function periodsOf(source) {
+    const raw = Array.isArray(source)
+        ? source
+        : source.periods || source.period_prices || source.prices || source.options || [];
+    const list = Array.isArray(raw)
+        ? raw.map((period) => ({
+            days: Number(period.days ?? period.period_days),
+            price: Number(period.price_kopeks ?? period.price),
+        }))
+        : Object.entries(raw).map(([days, price]) => ({ days: Number(days), price: Number(price) }));
+    const periods = list.filter((period) =>
+        Number.isFinite(period.days) && period.days > 0 && Number.isFinite(period.price));
+
+    // У суточного тарифа сроков нет вовсе: цена за день, а срок в один день
+    // сервер при покупке ставит сам. Без этого такой тариф в списке был, а
+    // купить его было нельзя.
+    if (!periods.length && source.is_daily && source.daily_price_kopeks) {
+        periods.push({ days: 1, price: Number(source.daily_price_kopeks), daily: true });
+    }
+    return periods.sort((a, b) => a.days - b.days);
 }
+
+const periodTitle = (period) => period.daily
+    ? "Посуточно · списывается каждый день"
+    : `${period.days} ${plural(period.days, "день", "дня", "дней")}`;
 
 async function pickPeriod(tariff) {
     const periods = periodsOf(tariff);
@@ -572,7 +597,7 @@ async function pickPeriod(tariff) {
     openPicker(
         `Срок · ${tariff.name}`,
         periods.map((period) => ({
-            title: `${period.days} ${plural(period.days, "день", "дня", "дней")}`,
+            title: periodTitle(period),
             subtitle: state.balanceKopeks !== null && period.price > state.balanceKopeks
                 ? "не хватает на балансе"
                 : "спишется с баланса",
@@ -602,7 +627,7 @@ $("#renewButton").addEventListener("click", async () => {
     openPicker(
         "На сколько продлить",
         periods.map((period) => ({
-            title: `${period.days} ${plural(period.days, "день", "дня", "дней")}`,
+            title: periodTitle(period),
             subtitle: state.balanceKopeks !== null && period.price > state.balanceKopeks
                 ? "не хватает на балансе"
                 : "спишется с баланса",
