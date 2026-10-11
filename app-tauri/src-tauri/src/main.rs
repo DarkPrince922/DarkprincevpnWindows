@@ -68,14 +68,67 @@ struct Response {
     body: String,
 }
 
+#[derive(Serialize)]
+struct SubscriptionView {
+    servers: Vec<ServerView>,
+    /// Серверы взяты из сохранённой копии: панель сейчас не ответила.
+    cached: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CachedSubscription {
+    url: String,
+    body: String,
+}
+
+fn subscription_cache_path(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+    Some(app_handle.path().app_data_dir().ok()?.join("subscription-cache.json"))
+}
+
 /// Загружает подписку и запоминает список серверов.
+///
+/// Удачный ответ сохраняется на диск. Если в следующий раз панель не
+/// ответит — технические работы, упал сервер, — серверы берутся из этой
+/// копии: узлы при этом живут сами по себе, и VPN продолжает работать.
+/// Копия привязана к адресу подписки: чужую подставлять нельзя.
 #[tauri::command]
 async fn load_subscription(
     url: String,
     hwid: String,
     app: TauriState<'_, App>,
-) -> Result<Vec<ServerView>, String> {
-    let text = fetch_subscription(&url, &hwid).await?;
+    app_handle: tauri::AppHandle,
+) -> Result<SubscriptionView, String> {
+    let cache = subscription_cache_path(&app_handle);
+    let fresh = match fetch_subscription(&url, &hwid).await {
+        Ok(text) if !dp_engine::subscription::parse(&text).is_empty() => Ok(text),
+        Ok(_) => Err("подписка пуста или в незнакомом формате".to_string()),
+        Err(error) => Err(error),
+    };
+    let (text, cached) = match fresh {
+        Ok(text) => {
+            if let Some(path) = &cache {
+                let copy = CachedSubscription { url: url.clone(), body: text.clone() };
+                if let Ok(json) = serde_json::to_string(&copy) {
+                    std::fs::write(path, json).ok();
+                }
+            }
+            (text, false)
+        }
+        Err(error) => {
+            let saved = cache
+                .and_then(|path| std::fs::read_to_string(path).ok())
+                .and_then(|json| serde_json::from_str::<CachedSubscription>(&json).ok())
+                .filter(|copy| copy.url == url);
+            match saved {
+                Some(copy) => {
+                    dp_engine::sys::log(&format!("подписка не загрузилась ({error}) — беру сохранённую"));
+                    (copy.body, true)
+                }
+                None => return Err(error),
+            }
+        }
+    };
     let servers = dp_engine::subscription::parse(&text);
     if servers.is_empty() {
         return Err("подписка пуста или в незнакомом формате".into());
@@ -91,7 +144,7 @@ async fn load_subscription(
         })
         .collect();
     *app.servers.lock().unwrap() = servers;
-    Ok(view)
+    Ok(SubscriptionView { servers: view, cached })
 }
 
 /// Подключение. Работа долгая и блокирующая — уводим её с потока окна,

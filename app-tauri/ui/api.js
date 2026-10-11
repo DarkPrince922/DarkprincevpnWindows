@@ -157,6 +157,57 @@ async function validToken() {
 
 const AUTH_FREE = /\/cabinet\/auth\/(deeplink|email|password|refresh)/;
 
+// ================= доступность кабинета =================
+//
+// Бывает, что сервис лежит: технические работы, упал сервер бота. VPN при
+// этом работать не перестаёт — узлы живут сами по себе, подписка сохранена.
+// Ломается только то, что требует кабинета: оплата, продление, устройства.
+// Здесь копится одно знание — «кабинет не отвечает», — по нему экран
+// показывает спокойную полосу и гасит кнопки, которые всё равно не сработали
+// бы. Обрыв или 5xx дважды подряд — сервис недоступен; любой нормальный
+// ответ — снова жив. 4xx не в счёт: это работающий кабинет, который просто
+// отказывает. Пока лежит — раз в 30 секунд проверяем сами.
+const serviceHealth = {
+    down: false,
+    failures: 0,
+    listeners: [],
+    timer: null,
+
+    onChange(listener) {
+        this.listeners.push(listener);
+    },
+
+    ok() {
+        this.failures = 0;
+        if (this.down) this.set(false);
+    },
+
+    failed() {
+        // нет сети у самого компьютера — не сбой сервиса
+        if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+        this.failures += 1;
+        if (this.failures >= 2 && !this.down) this.set(true);
+    },
+
+    set(down) {
+        this.down = down;
+        clearInterval(this.timer);
+        if (down) this.timer = setInterval(() => this.recheck(), 30000);
+        this.listeners.forEach((listener) => listener(down));
+    },
+
+    async recheck() {
+        try {
+            const response = await invoke("http", {
+                request: { method: "GET", url: `${store.base}/cabinet/branding`, headers: {}, body: null },
+            });
+            if (response.status < 500) this.ok();
+        } catch {
+            // всё ещё лежит
+        }
+    },
+};
+
 async function request(path, { method = "GET", body, raw = false } = {}) {
     const url = `${store.base}/${path}`;
     const needsAuth = !AUTH_FREE.test(url);
@@ -165,14 +216,23 @@ async function request(path, { method = "GET", body, raw = false } = {}) {
         const headers = {};
         if (body !== undefined) headers["Content-Type"] = "application/json";
         if (token) headers.Authorization = `Bearer ${token}`;
-        return invoke("http", {
-            request: {
-                method,
-                url,
-                headers,
-                body: body === undefined ? null : JSON.stringify(body),
-            },
-        });
+        let response;
+        try {
+            response = await invoke("http", {
+                request: {
+                    method,
+                    url,
+                    headers,
+                    body: body === undefined ? null : JSON.stringify(body),
+                },
+            });
+        } catch (error) {
+            serviceHealth.failed();
+            throw error;
+        }
+        if (response.status >= 500) serviceHealth.failed();
+        else serviceHealth.ok();
+        return response;
     };
 
     let response = await send(needsAuth ? await validToken() : null);

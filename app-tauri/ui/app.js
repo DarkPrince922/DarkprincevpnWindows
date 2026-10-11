@@ -232,7 +232,7 @@ async function activateGuestSubscription(rawLink) {
     controls.forEach((button) => (button.disabled = true));
     message($("#authMessage"), "Проверяю подписку…", "info");
     try {
-        const servers = await fetchServers(url);
+        const { servers } = await fetchServers(url);
         store.guestSubscription = url;
         state.guestMode = !store.loggedIn;
         state.usingSharedSubscription = true;
@@ -361,10 +361,22 @@ async function loadSubscription() {
         }
     } catch (error) {
         accountError = error;
-        state.subscription = null;
-        state.subscriptions = [];
-        state.subIndex = 0;
+        // Кабинет не ответил — берём последнее, что знали о подписках: адрес
+        // подписки от этого не меняется, а узлы работают и без кабинета.
+        const saved = readSavedSubscriptions();
+        if (saved) {
+            state.subscriptions = saved.list;
+            state.subIndex = Math.min(state.subIndex, saved.list.length - 1);
+            state.subscription = saved.list[state.subIndex] || null;
+            ownUrl = state.subscription?.subscription_url || saved.url || null;
+            accountError = null;
+        } else {
+            state.subscription = null;
+            state.subscriptions = [];
+            state.subIndex = 0;
+        }
     }
+    if (!accountError && ownUrl) saveSubscriptions(state.subscriptions, ownUrl);
 
     const url = ownUrl || sharedUrl;
     state.usingSharedSubscription = Boolean(sharedUrl && url === sharedUrl);
@@ -766,7 +778,11 @@ function deviceId() {
 
 async function loadServers(url) {
     try {
-        applyServers(await fetchServers(url));
+        const result = await fetchServers(url);
+        applyServers(result.servers);
+        // панель не ответила, серверы — из сохранённой копии: это тоже
+        // недоступность сервиса, и сказать о ней надо тем же языком
+        if (result.cached) serviceHealth.set(true);
         return true;
     } catch (error) {
         $("#serverName").textContent = "Серверы не загрузились";
@@ -774,6 +790,43 @@ async function loadServers(url) {
         return false;
     }
 }
+
+// Последний удачный ответ кабинета о подписках — на случай, когда он лежит.
+function saveSubscriptions(list, url) {
+    try {
+        localStorage.setItem("dp_last_subs", JSON.stringify({ list, url }));
+    } catch {
+        // переполнено хранилище — не страшно, просто не будет запаса
+    }
+}
+
+function readSavedSubscriptions() {
+    try {
+        const saved = JSON.parse(localStorage.getItem("dp_last_subs") || "null");
+        return saved && Array.isArray(saved.list) && (saved.list.length || saved.url) ? saved : null;
+    } catch {
+        return null;
+    }
+}
+
+// Кнопки, которым нужен кабинет. Пока он лежит, их гасим заранее — нажать
+// и получить ошибку хуже, чем видеть, что сейчас это недоступно.
+const CABINET_BUTTONS = ["#topup", "#openTariffs", "#renewButton", "#openDevices", "#promoSubmit"];
+
+function renderServiceState(down) {
+    $("#serviceBanner").classList.toggle("hidden", !down);
+    for (const selector of CABINET_BUTTONS) {
+        const button = $(selector);
+        if (button) {
+            button.disabled = down;
+            button.title = down ? "Станет доступно, когда сервис вернётся" : "";
+        }
+    }
+    // ошибка запроса при лежащем кабинете — та же новость, что в полосе
+    if (down && $("#homeMessage").classList.contains("err")) message($("#homeMessage"), "");
+}
+
+serviceHealth.onChange(renderServiceState);
 
 function fetchServers(url) {
     return invoke("load_subscription", { url, hwid: deviceId() });

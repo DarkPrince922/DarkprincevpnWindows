@@ -348,6 +348,8 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
 }
 
 .msg.err { background: var(--danger-bg); border: 1px solid var(--danger-line); color: var(--danger-text); }
+.msg.warn { background: rgba(224, 169, 74, 0.12); border: 1px solid rgba(224, 169, 74, 0.45); color: var(--text, inherit); }
+.msg.warn b { color: #e0a94a; }
 .msg.info { background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--info-text); }
 
 /* ---------- вход ---------- */
