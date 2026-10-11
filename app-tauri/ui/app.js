@@ -1006,6 +1006,7 @@ async function connect() {
     try {
         await invoke("connect", { index: state.selected, tun: state.tun });
         state.connected = true;
+        await verifyConnection();
     } catch (error) {
         state.connected = false;
         const text = String(error);
@@ -1025,6 +1026,63 @@ function offerElevation() {
     button.textContent = "Перезапустить от администратора";
     button.addEventListener("click", () => invoke("restart_elevated"));
     node.append(document.createElement("br"), button);
+}
+
+/**
+ * Подключились — ещё не значит, что интернет пошёл: ядро запускается и с
+ * мёртвым сервером. Проверяем запросом через ядро; нет ответа — пробуем ещё
+ * два узла, ближние по последнему замеру, прежде чем сдаться. Если не
+ * ответил никто, возвращаемся к выбранному и честно об этом говорим:
+ * скорее всего, дело не в серверах, а в сети.
+ */
+async function verifyConnection() {
+    await setBusy(true, "Проверяю связь…");
+    if (await invoke("probe")) return;
+
+    const first = state.selected;
+    const nameOf = (index) => state.servers[index]?.name || "сервер";
+    const candidates = otherServersByPing(first).slice(0, 2);
+    for (const index of candidates) {
+        await setBusy(true, `«${nameOf(first)}» не отвечает · пробую «${nameOf(index)}»`);
+        try {
+            await invoke("connect", { index, tun: state.tun });
+        } catch {
+            continue;
+        }
+        if (await invoke("probe")) {
+            // выбор человека не переписываем: это временная замена
+            state.selected = index;
+            renderServer();
+            message(
+                $("#homeMessage"),
+                `«${nameOf(first)}» не ответил — подключились к «${nameOf(index)}»`,
+                "info"
+            );
+            return;
+        }
+    }
+    if (candidates.length) {
+        await setBusy(true, "Возвращаюсь к выбранному серверу…");
+        state.selected = first;
+        renderServer();
+        await invoke("connect", { index: first, tun: state.tun });
+    }
+    message(
+        $("#homeMessage"),
+        "Подключено, но интернет через сервер не идёт. Проверьте сеть или выберите другой сервер."
+    );
+}
+
+/** Остальные узлы: сначала ответившие быстрее, неизмеренные — потом. */
+function otherServersByPing(exclude) {
+    const rank = (index) => {
+        const ping = state.pings?.[index];
+        return typeof ping === "number" && ping >= 0 ? ping : Number.MAX_SAFE_INTEGER;
+    };
+    return state.servers
+        .map((_, index) => index)
+        .filter((index) => index !== exclude)
+        .sort((a, b) => rank(a) - rank(b));
 }
 
 async function setBusy(busy, text) {

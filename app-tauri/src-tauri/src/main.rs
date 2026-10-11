@@ -111,6 +111,19 @@ async fn connect(index: usize, tun: bool, app: TauriState<'_, App>) -> Result<()
     }
 }
 
+/// Ходит ли трафик через подключение. Замок движка держим только на миг —
+/// узнать порт: сама проверка длится секунды, и всё это время окно не
+/// должно ждать ответа на «статус».
+#[tauri::command]
+async fn probe(app: TauriState<'_, App>) -> Result<bool, String> {
+    let Some(port) = app.vpn.lock().unwrap().http_port() else {
+        return Ok(false);
+    };
+    tauri::async_runtime::spawn_blocking(move || dp_engine::probe(port))
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn disconnect(app: TauriState<'_, App>) -> Result<(), String> {
     let vpn = Arc::clone(&app.vpn);
@@ -436,6 +449,24 @@ fn quit(app: &tauri::AppHandle) {
     });
 }
 
+/// Пока поднят туннель, раз в пять секунд сверяем шлюз: сменилась сеть —
+/// маршруты до сервера переносятся на новый. Шлюз спрашиваем без замка
+/// движка — PowerShell отвечает долго, — а замок берём, только если он
+/// свободен: идёт подключение — проверим в следующий раз.
+fn watch_network(vpn: Arc<Mutex<Vpn>>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(5));
+        let up = vpn.try_lock().map(|vpn| vpn.tunnel_up()).unwrap_or(false);
+        if !up {
+            continue;
+        }
+        let (gateway, gateway6) = dp_engine::tun::current_gateways();
+        if let Ok(mut vpn) = vpn.try_lock() {
+            vpn.follow_gateways(gateway, gateway6);
+        }
+    });
+}
+
 fn main() {
     tauri::Builder::default()
         // Второй запуск не поднимает второе приложение, а показывает уже
@@ -484,8 +515,10 @@ fn main() {
             // следы прошлого запуска, если его завершили жёстко
             Vpn::clear_stale_state(&core_dir);
 
+            let vpn = Arc::new(Mutex::new(Vpn::new(core_dir.clone(), data_dir)));
+            watch_network(Arc::clone(&vpn));
             app.manage(App {
-                vpn: Arc::new(Mutex::new(Vpn::new(core_dir.clone(), data_dir))),
+                vpn,
                 servers: Mutex::new(Vec::new()),
                 core_dir,
             });
@@ -550,6 +583,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             load_subscription,
             connect,
+            probe,
             disconnect,
             status,
             ping_servers,

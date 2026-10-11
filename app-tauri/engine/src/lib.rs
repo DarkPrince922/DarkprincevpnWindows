@@ -75,6 +75,24 @@ impl Vpn {
         self.mode
     }
 
+    /// Пока поднят туннель, вести маршруты до сервера за сменой сети.
+    /// Шлюзы узнаются заранее, без замка: см. [`tun::current_gateways`].
+    pub fn follow_gateways(&mut self, gateway: Option<String>, gateway6: Option<tun::Gateway6>) {
+        if self.state == State::Connected && self.mode == Mode::Tun {
+            self.tunnel.follow_gateways(gateway, gateway6);
+        }
+    }
+
+    /// Поднят ли туннель — чтобы фоновая проверка сети не ходила зря.
+    pub fn tunnel_up(&self) -> bool {
+        self.state == State::Connected && self.mode == Mode::Tun && self.tunnel.is_up()
+    }
+
+    /// Порт HTTP-входа ядра, если подключены. Через него идёт проверка связи.
+    pub fn http_port(&self) -> Option<u16> {
+        (self.state == State::Connected).then_some(self.http_port)
+    }
+
     /// Поднимает соединение. Всё внутри блокирующее: запуск процессов,
     /// разрешение имён, вызовы route и netsh — вызывать только с фонового
     /// потока, иначе окно перестанет перерисовываться.
@@ -212,6 +230,94 @@ impl Vpn {
 impl Drop for Vpn {
     fn drop(&mut self) {
         self.disconnect();
+    }
+}
+
+/// Адреса для проверки связи. Два разных: правила маршрутизации из подписки
+/// могут пустить один из них мимо прокси или заблокировать, и тогда «нет
+/// связи» было бы ложным. Обычный HTTP: ответ 204 без тела, шифровать нечего.
+const PROBE_TARGETS: [(&str, &str); 2] = [
+    ("cp.cloudflare.com", "/generate_204"),
+    ("www.gstatic.com", "/generate_204"),
+];
+
+/// Ходит ли через ядро трафик на самом деле.
+///
+/// Подключение ещё не значит, что интернет пошёл: ядро запускается и с
+/// мёртвым сервером, и «Подключено» горело бы при полном отсутствии связи.
+/// Запрос идёт в HTTP-вход ядра, то есть тем же путём, что и трафик
+/// программ, до того же сервера.
+///
+/// Блокирующая и может занять до двенадцати секунд — только с фонового
+/// потока и без захваченного замка движка.
+pub fn probe(http_port: u16) -> bool {
+    PROBE_TARGETS
+        .iter()
+        .any(|(host, path)| probe_via_http_proxy(http_port, host, path))
+}
+
+fn probe_via_http_proxy(port: u16, host: &str, path: &str) -> bool {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_secs(2)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(6)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    let request =
+        format!("GET http://{host}{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut head = [0u8; 64];
+    let Ok(read) = stream.read(&mut head) else {
+        return false;
+    };
+    // «HTTP/1.1 204 No Content»
+    String::from_utf8_lossy(&head[..read])
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .is_some_and(|code| (200..400).contains(&code))
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn answer_once(reply: &'static str) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 512];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(reply.as_bytes());
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn answer_204_means_traffic_flows() {
+        let port = answer_once("HTTP/1.1 204 No Content\r\n\r\n");
+        assert!(probe_via_http_proxy(port, "cp.cloudflare.com", "/generate_204"));
+    }
+
+    #[test]
+    fn proxy_error_means_no_traffic() {
+        let port = answer_once("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+        assert!(!probe_via_http_proxy(port, "cp.cloudflare.com", "/generate_204"));
+    }
+
+    #[test]
+    fn nobody_listening_means_no_traffic() {
+        let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        assert!(!probe_via_http_proxy(port, "cp.cloudflare.com", "/generate_204"));
     }
 }
 
