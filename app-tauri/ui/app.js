@@ -986,8 +986,24 @@ function readSavedSubscriptions() {
 // и получить ошибку хуже, чем видеть, что сейчас это недоступно.
 const CABINET_BUTTONS = ["#topup", "#openTariffs", "#renewButton", "#openDevices", "#promoSubmit"];
 
-function renderServiceState(down) {
-    $("#serviceBanner").classList.toggle("hidden", !down);
+// Три разные надписи: лежим мы, у человека нет сети или оператор включил
+// белые списки. Подписка сохранена во всех трёх случаях.
+const SERVICE_TEXTS = {
+    down: ["Сервис временно недоступен.",
+        "VPN работает по сохранённой подписке. Оплата, продление и покупки станут доступны, когда сервис вернётся."],
+    restricted: ["Интернет ограничен.",
+        "Похоже, включены белые списки: зарубежные сайты и наш сервис отсюда не открываются. Подписка сохранена — " +
+        "подключитесь к другой сети или к серверу, который работает при ограничениях."],
+    offline: ["Нет подключения к интернету.",
+        "Проверьте сеть. Подписка сохранена — VPN подключится, как только интернет появится."],
+};
+
+function renderServiceState(down, status = serviceHealth.status) {
+    const banner = $("#serviceBanner");
+    banner.classList.toggle("hidden", !down);
+    const [title, text] = SERVICE_TEXTS[status] || SERVICE_TEXTS.down;
+    banner.innerHTML = "";
+    banner.append(Object.assign(document.createElement("b"), { textContent: title }), " " + text);
     for (const selector of CABINET_BUTTONS) {
         const button = $(selector);
         if (button) {

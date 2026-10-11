@@ -60,6 +60,9 @@ struct Request {
     headers: HashMap<String, String>,
     #[serde(default)]
     body: Option<String>,
+    /// Свой таймаут для быстрых проверок доступности; по умолчанию 30 секунд.
+    #[serde(default)]
+    timeout_ms: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -397,6 +400,9 @@ async fn http(request: Request) -> Result<Response, String> {
     let method = reqwest::Method::from_bytes(request.method.to_uppercase().as_bytes())
         .map_err(|_| "неизвестный метод запроса".to_string())?;
     let mut builder = client.request(method, &request.url);
+    if let Some(ms) = request.timeout_ms {
+        builder = builder.timeout(std::time::Duration::from_millis(ms));
+    }
     for (name, value) in request.headers {
         builder = builder.header(name, value);
     }
@@ -433,6 +439,7 @@ async fn fetch_subscription(url: &str, hwid: &str) -> Result<String, String> {
         url: url.to_string(),
         headers,
         body: None,
+        timeout_ms: None,
     })
     .await?;
     if !(200..300).contains(&response.status) {

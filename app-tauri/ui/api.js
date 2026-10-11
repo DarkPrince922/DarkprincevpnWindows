@@ -170,11 +170,18 @@ const AUTH_FREE = /\/cabinet\/auth\/(deeplink|email\/(login|register\/standalone
 // бы. Обрыв или 5xx дважды подряд — сервис недоступен; любой нормальный
 // ответ — снова жив. 4xx не в счёт: это работающий кабинет, который просто
 // отказывает. Пока лежит — раз в 30 секунд проверяем сами.
+// «Кабинет не ответил» — не всегда наша беда: без интернета вовсе или при
+// белых списках у оператора надпись «сервис недоступен» была бы неправдой.
+// Поэтому, когда кабинет не ответил, спрашиваем ещё два адреса — российский
+// из белых списков и зарубежный: ничего не открывается — нет сети; только
+// российский — белые списки; оба — значит, лежим мы.
 const serviceHealth = {
     down: false,
+    status: "ok", // ok | down | restricted | offline
     failures: 0,
     listeners: [],
     timer: null,
+    classifying: false,
 
     onChange(listener) {
         this.listeners.push(listener);
@@ -182,32 +189,66 @@ const serviceHealth = {
 
     ok() {
         this.failures = 0;
-        if (this.down) this.set(false);
+        if (this.down) this.setStatus("ok");
     },
 
     failed() {
-        // нет сети у самого компьютера — не сбой сервиса
-        if (typeof navigator !== "undefined" && navigator.onLine === false) return;
         this.failures += 1;
-        if (this.failures >= 2 && !this.down) this.set(true);
+        if (this.failures >= 2) this.classify();
     },
 
+    /** Открывается ли адрес вообще — ответил хоть чем-то. */
+    async reachable(url) {
+        try {
+            await invoke("http", { request: { method: "HEAD", url, headers: {}, body: null, timeout_ms: 6000 } });
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
+    async classify() {
+        if (this.classifying) return;
+        this.classifying = true;
+        try {
+            const [domestic, foreign] = await Promise.all([
+                this.reachable("https://ya.ru"),
+                this.reachable("https://cp.cloudflare.com/generate_204"),
+            ]);
+            // пока проверяли, кабинет мог ответить — тогда всё уже хорошо
+            if (this.failures === 0) return;
+            this.setStatus(!domestic && !foreign ? "offline" : !foreign ? "restricted" : "down");
+        } finally {
+            this.classifying = false;
+        }
+    },
+
+    /** [down] — для совместимости: true значит «кабинет недоступен, причина неизвестна». */
     set(down) {
-        this.down = down;
+        this.setStatus(down ? "down" : "ok");
+    },
+
+    setStatus(status) {
+        const changed = status !== this.status;
+        this.status = status;
+        this.down = status !== "ok";
         clearInterval(this.timer);
-        if (down) this.timer = setInterval(() => this.recheck(), 30000);
-        this.listeners.forEach((listener) => listener(down));
+        if (this.down) this.timer = setInterval(() => this.recheck(), 30000);
+        if (changed) this.listeners.forEach((listener) => listener(this.down, status));
     },
 
     async recheck() {
         try {
             const response = await invoke("http", {
-                request: { method: "GET", url: `${store.base}/cabinet/branding`, headers: {}, body: null },
+                request: { method: "GET", url: `${store.base}/cabinet/branding`, headers: {}, body: null, timeout_ms: 8000 },
             });
-            if (response.status < 500) this.ok();
+            if (response.status < 500) return this.ok();
         } catch {
-            // всё ещё лежит
+            // всё ещё не отвечает
         }
+        // сеть могла появиться, а кабинет нет — уточняем причину
+        this.failures = Math.max(this.failures, 2);
+        this.classify();
     },
 };
 
