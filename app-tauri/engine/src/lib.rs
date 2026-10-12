@@ -22,6 +22,9 @@ use std::time::Duration;
 use serde::Serialize;
 pub use subscription::Server;
 
+/// Файл ядра в папке core/.
+const XRAY: &str = "xray.exe";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
@@ -51,6 +54,8 @@ pub struct Vpn {
     /// системный прокси при отключении.
     socks_port: u16,
     http_port: u16,
+    /// Порт службы статистики ядра — по нему считаем трафик.
+    api_port: u16,
 }
 
 impl Vpn {
@@ -64,7 +69,14 @@ impl Vpn {
             mode: Mode::Proxy,
             socks_port: config::SOCKS_PORT,
             http_port: config::HTTP_PORT,
+            api_port: 0,
         }
+    }
+
+    /// Куда спрашивать статистику, если подключены: (ядро, порт).
+    pub fn stats_endpoint(&self) -> Option<(PathBuf, u16)> {
+        (self.state == State::Connected && self.api_port != 0)
+            .then(|| (self.core_dir.join(XRAY), self.api_port))
     }
 
     pub fn state(&self) -> State {
@@ -116,6 +128,10 @@ impl Vpn {
                 break port;
             }
         };
+        self.api_port = (0..5)
+            .map(|_| sys::free_port())
+            .find(|port| ![self.socks_port, self.http_port].contains(port))
+            .unwrap_or(0);
         if (self.socks_port, self.http_port) != (config::SOCKS_PORT, config::HTTP_PORT) {
             sys::log(&format!(
                 "привычные порты заняты, берём свои: socks {}, http {}",
@@ -162,7 +178,7 @@ impl Vpn {
     }
 
     fn start_xray(&mut self, server: &Server) -> Result<(), String> {
-        let core = self.core_dir.join("xray.exe");
+        let core = self.core_dir.join(XRAY);
         sys::log(&format!("ядро: {}", core.display()));
         if !core.exists() {
             return Err(format!(
@@ -175,7 +191,7 @@ impl Vpn {
         let config_path = self.data_dir.join("xray-config.json");
         std::fs::write(
             &config_path,
-            config::build(&server.raw_config, self.socks_port, self.http_port)?,
+            config::build_with_stats(&server.raw_config, self.socks_port, self.http_port, self.api_port)?,
         )
             .map_err(|error| format!("не удалось сохранить конфиг ядра: {error}"))?;
         sys::log(&format!("конфиг: {}", config_path.display()));
@@ -222,7 +238,7 @@ impl Vpn {
 
     /// Уборка следов прошлого запуска, оборванного жёстко.
     pub fn clear_stale_state(core_dir: &Path) {
-        sys::kill_our(&core_dir.join("xray.exe"));
+        sys::kill_our(&core_dir.join(XRAY));
         tun::clear_stale_state(core_dir);
     }
 }
@@ -231,6 +247,28 @@ impl Drop for Vpn {
     fn drop(&mut self) {
         self.disconnect();
     }
+}
+
+/// Сколько отправлено и получено через подключение, в байтах.
+///
+/// Спрашиваем у ядра его же командой: `xray api statsquery`. Блокирующая,
+/// доли секунды — только с фонового потока.
+pub fn traffic(core: &Path, api_port: u16) -> Option<(u64, u64)> {
+    let output = sys::command(&core.to_string_lossy())
+        .args([
+            "api",
+            "statsquery",
+            &format!("--server=127.0.0.1:{api_port}"),
+            "-pattern",
+            "inbound>>>",
+        ])
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    config::parse_traffic(&String::from_utf8_lossy(&output.stdout))
 }
 
 /// Узел ходит поверх UDP (QUIC и подобное). До такого узла TCP-соединение не
@@ -250,7 +288,7 @@ pub fn over_udp(server: &Server) -> bool {
 /// оно сравнимо с замером остальных узлов, где время — одно соединение TCP.
 /// Блокирующая, до пары секунд — только с фонового потока.
 pub fn real_delay(core_dir: &Path, work_dir: &Path, server: &Server) -> i64 {
-    let core = core_dir.join("xray.exe");
+    let core = core_dir.join(XRAY);
     if !core.exists() {
         return -1;
     }

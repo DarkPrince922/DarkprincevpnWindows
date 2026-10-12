@@ -456,7 +456,7 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     position: relative;
     display: grid;
     place-items: center;
-    padding: 72px 0 6px;
+    padding: 28px 0 0;
 }
 
 /* Карта выходит за поля main: у неё растворяются края, и обрезать её ровно
@@ -475,108 +475,210 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     pointer-events: none;
 }
 
-.power { z-index: 1; }
+/* Сцена кнопки — как на Android: свечение, тонкое кольцо, пунктирное
+   кольцо и две волны. Отключено — тёмный «стеклянный» круг, подключено —
+   круг наливается золотом и светится, от него расходятся волны. */
+.power-stage {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 276px;
+    height: 276px;
+}
+
+/* тонкое кольцо по краю сцены */
+.power-stage::before {
+    content: "";
+    position: absolute;
+    inset: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--wash);
+}
+
+/* пунктирное кольцо вплотную к кнопке */
+.power-stage::after {
+    content: "";
+    position: absolute;
+    inset: 32px;
+    border-radius: 50%;
+    border: 1px dashed var(--outline);
+    transition: border-color 0.6s var(--ease);
+}
+
+body.connected .power-stage::after { border-color: var(--accent-line); }
+body.busy .power-stage::after {
+    border-color: rgba(94, 139, 255, 0.55);
+    animation: spin 6s linear infinite;
+}
+
+.halo {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* золотое свечение за кнопкой */
+.halo::before {
+    content: "";
+    position: absolute;
+    inset: -10px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-line) 0%, var(--accent-soft) 45%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.8s var(--ease);
+}
+
+body.connected .halo::before { opacity: 1; }
+
+/* две волны: расходятся от кнопки к краю сцены, по очереди */
+.halo i {
+    position: absolute;
+    inset: 45px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    opacity: 0;
+}
+
+body.connected .halo i { animation: wave 2.6s linear infinite; }
+body.connected .halo i + i { animation-delay: -1.3s; }
+
+@keyframes wave {
+    from { transform: scale(1); opacity: 0.45; }
+    to { transform: scale(1.33); opacity: 0; }
+}
 
 .power {
     position: relative;
+    z-index: 1;
     width: 186px;
     height: 186px;
     border-radius: 50%;
-    border: 0;
+    border: 1px solid var(--outline);
     background: radial-gradient(circle at 50% 35%, var(--power-hi), var(--power-lo));
     box-shadow: inset 0 1px 0 var(--gloss), 0 20px 44px var(--shadow);
     display: grid;
     place-items: center;
     cursor: pointer;
-    transition: transform 0.45s var(--spring), box-shadow 0.6s var(--ease);
+    overflow: hidden;
+    transition: transform 0.45s var(--spring), box-shadow 0.6s var(--ease), border-color 0.6s var(--ease);
 }
 
-/* Кольцо вокруг кнопки: серое — отключено, золотое и дышит — подключено,
-   бегущая дуга — идёт подключение. */
-.power::before {
-    content: "";
-    position: absolute;
-    inset: -6px;
-    border-radius: 50%;
-    border: 2px solid var(--outline);
-    transition: border-color 0.6s var(--ease), box-shadow 0.6s var(--ease), opacity 0.4s;
-}
-
-/* Волна, что расходится от подключённой кнопки. */
+/* Золотой шар: отдельный слой, чтобы налиться плавно, — переход между
+   градиентами браузер не анимирует, а прозрачность анимирует. Блик слева
+   сверху и тень справа снизу делают круг объёмным. */
 .power::after {
     content: "";
     position: absolute;
-    inset: -6px;
+    inset: 0;
     border-radius: 50%;
-    border: 2px solid var(--accent);
+    background:
+        radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.5), transparent 52%),
+        radial-gradient(circle at 40% 35%, var(--accent-hi), var(--accent) 55%, var(--accent-lo));
     opacity: 0;
-    pointer-events: none;
+    transition: opacity 0.6s var(--ease);
 }
 
 .power svg {
-    width: 62px;
-    height: 62px;
+    position: relative;
+    z-index: 1;
+    width: 66px;
+    height: 66px;
     stroke: var(--muted);
     fill: none;
-    stroke-width: 2;
-    transition: stroke 0.6s var(--ease), transform 0.6s var(--spring), filter 0.6s var(--ease);
+    stroke-width: 2.2;
+    transition: stroke 0.6s var(--ease), transform 0.6s var(--spring);
 }
 
 .power:hover { transform: scale(1.035); box-shadow: inset 0 1px 0 var(--gloss), 0 26px 56px var(--shadow); }
 .power:hover svg { stroke: var(--text); }
 .power:active { transform: scale(0.95); transition-duration: 0.12s; }
-.power:disabled { cursor: default; transform: none; }
+.power:disabled { cursor: default; }
 
-body.connected .power::before {
-    border-color: var(--accent);
-    box-shadow: 0 0 34px var(--accent-line), inset 0 0 22px var(--accent-soft);
-    animation: breathe 3.2s ease-in-out infinite;
+body.connected .power {
+    border-color: transparent;
+    box-shadow: 0 18px 50px var(--accent-line);
+    animation: breathe 2.6s ease-in-out infinite alternate;
 }
 
-body.connected .power::after { animation: ripple 3.2s var(--ease) infinite; }
+body.connected .power::after { opacity: 1; }
 
 body.connected .power svg,
 body.connected .power:hover svg {
-    stroke: var(--accent);
-    transform: rotate(360deg);
-    filter: drop-shadow(0 0 10px var(--accent-line));
+    stroke: var(--on-accent);
+    stroke-width: 2.6;
 }
 
-body.busy .power::before {
-    border-color: var(--outline);
-    border-top-color: var(--accent);
-    border-right-color: var(--accent-line);
-    box-shadow: 0 0 24px var(--accent-soft);
-    animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+/* Подключение — синим, как на Android: кнопка пульсирует, значок мерцает. */
+body.busy .power {
+    border-color: rgba(94, 139, 255, 0.5);
+    animation: breathe-fast 0.9s ease-in-out infinite alternate;
 }
 
-body.busy .power svg { stroke: var(--accent); animation: glow 1.2s ease-in-out infinite alternate; }
+body.busy .power svg { stroke: var(--accent-2); animation: glow 0.9s ease-in-out infinite alternate; }
 
-@keyframes breathe {
-    0%, 100% { box-shadow: 0 0 26px var(--accent-line), inset 0 0 18px var(--accent-soft); }
-    50% { box-shadow: 0 0 46px var(--accent-line), inset 0 0 28px var(--accent-soft); }
-}
-
-@keyframes ripple {
-    0% { transform: scale(1); opacity: 0.55; }
-    70%, 100% { transform: scale(1.32); opacity: 0; }
-}
-
-@keyframes glow { from { opacity: 0.55; } to { opacity: 1; } }
-
+@keyframes breathe { from { transform: scale(1); } to { transform: scale(1.015); } }
+@keyframes breathe-fast { from { transform: scale(1); } to { transform: scale(1.04); } }
+@keyframes glow { from { opacity: 0.45; } to { opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-#stateText {
-    text-align: center;
-    font-size: 14px;
-    font-weight: 600;
+/* ---------- статус ---------- */
+
+/* Крупное слово и строка под ним: «защищено или нет» читается за полсекунды,
+   остальное — потом. */
+.status { text-align: center; margin: 4px 0 18px; }
+
+#stateTitle {
+    margin: 0 0 4px;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 25px;
+    line-height: 1.25;
     color: var(--muted);
-    margin: 14px 0 18px;
-    min-height: 20px;
     transition: color 0.5s var(--ease);
 }
 
-body.connected #stateText { color: var(--text); }
+body.connected #stateTitle { color: var(--text); }
+
+#stateText {
+    margin: 0;
+    min-height: 20px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.status.changed { animation: fade-up 0.35s var(--ease); }
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } }
+
+/* ---------- получено и отправлено ---------- */
+
+.stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: -4px 0 18px;
+    animation: slide-in 0.45s var(--ease);
+}
+
+.stat {
+    background: var(--surface);
+    border: 1px solid var(--outline);
+    border-radius: 20px;
+    padding: 12px 16px 13px;
+    backdrop-filter: blur(14px);
+}
+
+.stat span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+.stat b {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 21px;
+    white-space: nowrap;
+}
 
 /* ---------- переключатель режима ---------- */
 

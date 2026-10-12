@@ -34,6 +34,76 @@ pub fn build(raw_config: &str, socks_port: u16, http_port: u16) -> Result<String
     Ok(config.to_string())
 }
 
+/// Тот же конфиг, но со службой статистики ядра на локальном порту: по ней
+/// приложение показывает, сколько получено и отправлено.
+///
+/// Считаем по входам (socks и http): через них идёт весь трафик программ, и в
+/// туннеле, и в режиме прокси, — какой бы выход ни выбрали правила панели.
+pub fn build_with_stats(
+    raw_config: &str,
+    socks_port: u16,
+    http_port: u16,
+    api_port: u16,
+) -> Result<String, String> {
+    let mut config: Value = serde_json::from_str(&build(raw_config, socks_port, http_port)?)
+        .map_err(|error| error.to_string())?;
+    let object = config.as_object_mut().ok_or("конфиг сервера должен быть объектом")?;
+
+    object.insert("api".into(), json!({"tag": "api", "services": ["StatsService"]}));
+    object.insert("stats".into(), json!({}));
+    let policy = object.entry("policy").or_insert_with(|| json!({}));
+    if let Some(policy) = policy.as_object_mut() {
+        let system = policy.entry("system").or_insert_with(|| json!({}));
+        if let Some(system) = system.as_object_mut() {
+            system.insert("statsInboundUplink".into(), json!(true));
+            system.insert("statsInboundDownlink".into(), json!(true));
+        }
+    }
+    if let Some(inbounds) = object.get_mut("inbounds").and_then(Value::as_array_mut) {
+        inbounds.push(json!({
+            "tag": "api",
+            "listen": "127.0.0.1",
+            "port": api_port,
+            "protocol": "dokodemo-door",
+            "settings": {"address": "127.0.0.1"}
+        }));
+    }
+    // запросы к статистике — самым первым правилом, раньше правил панели
+    let routing = object.entry("routing").or_insert_with(|| json!({}));
+    if let Some(routing) = routing.as_object_mut() {
+        let rules = routing.entry("rules").or_insert_with(|| json!([]));
+        if let Some(rules) = rules.as_array_mut() {
+            rules.insert(0, json!({"type": "field", "inboundTag": ["api"], "outboundTag": "api"}));
+        }
+    }
+    Ok(config.to_string())
+}
+
+/// Сумма (отправлено, получено) из ответа `xray api statsquery`.
+pub fn parse_traffic(answer: &str) -> Option<(u64, u64)> {
+    let parsed: Value = serde_json::from_str(answer).ok()?;
+    let mut up = 0u64;
+    let mut down = 0u64;
+    for stat in parsed.get("stat")?.as_array()? {
+        let name = stat.get("name").and_then(Value::as_str).unwrap_or("");
+        // нулевое значение ядро не присылает вовсе; число бывает и строкой
+        let value = match stat.get("value") {
+            Some(Value::String(text)) => text.parse().unwrap_or(0),
+            Some(value) => value.as_u64().unwrap_or(0),
+            None => 0,
+        };
+        if !name.starts_with("inbound>>>") || name.starts_with("inbound>>>api>>>") {
+            continue;
+        }
+        if name.ends_with(">>>uplink") {
+            up += value;
+        } else if name.ends_with(">>>downlink") {
+            down += value;
+        }
+    }
+    Some((up, down))
+}
+
 fn socks_inbound(port: u16) -> Value {
     json!({
         "tag": "socks",
@@ -81,6 +151,32 @@ mod tests {
         let raw = r#"{"log":{"loglevel":"debug"},"outbounds":[]}"#;
         let built: Value = serde_json::from_str(&build(raw, SOCKS_PORT, HTTP_PORT).unwrap()).unwrap();
         assert_eq!(built["log"]["loglevel"], "debug");
+    }
+
+    #[test]
+    fn stats_service_is_reachable_before_panel_rules() {
+        let raw = r#"{"outbounds":[{"protocol":"vless","tag":"proxy"}],
+                      "routing":{"rules":[{"type":"field","outboundTag":"block"}]}}"#;
+        let built: Value =
+            serde_json::from_str(&build_with_stats(raw, SOCKS_PORT, HTTP_PORT, 10813).unwrap()).unwrap();
+        assert_eq!(built["inbounds"][2]["port"], 10813);
+        assert_eq!(built["inbounds"][2]["tag"], "api");
+        assert_eq!(built["routing"]["rules"][0]["outboundTag"], "api");
+        assert_eq!(built["routing"]["rules"][1]["outboundTag"], "block");
+        assert_eq!(built["policy"]["system"]["statsInboundDownlink"], true);
+    }
+
+    #[test]
+    fn traffic_sums_program_inbounds_only() {
+        let answer = r#"{"stat":[
+            {"name":"inbound>>>socks>>>traffic>>>uplink","value":"100"},
+            {"name":"inbound>>>socks>>>traffic>>>downlink","value":"1000"},
+            {"name":"inbound>>>http>>>traffic>>>downlink","value":24},
+            {"name":"inbound>>>http>>>traffic>>>uplink"},
+            {"name":"inbound>>>api>>>traffic>>>downlink","value":"999"},
+            {"name":"outbound>>>proxy>>>traffic>>>downlink","value":"5"}]}"#;
+        assert_eq!(parse_traffic(answer), Some((100, 1024)));
+        assert_eq!(parse_traffic("{}"), None);
     }
 
     #[test]

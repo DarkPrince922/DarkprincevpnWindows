@@ -93,14 +93,27 @@
                 <!-- Карта живёт под кнопкой: она подсказывает, куда идёт
                      трафик, но спорить с кнопкой за внимание не должна. -->
                 <canvas class="map" id="map" aria-hidden="true"></canvas>
-                <button class="power" id="power" title="Подключиться">
-                    <svg viewBox="0 0 24 24" stroke-linecap="round">
-                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
-                        <path d="M12 2v10" />
-                    </svg>
-                </button>
+                <!-- Сцена кнопки, как на Android: свечение, тонкое и пунктирное
+                     кольца, две волны. Сама кнопка при подключении наливается
+                     золотом. -->
+                <div class="power-stage">
+                    <div class="halo" aria-hidden="true"><i></i><i></i></div>
+                    <button class="power" id="power" title="Подключиться">
+                        <svg viewBox="0 0 24 24" stroke-linecap="round">
+                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                            <path d="M12 2v10" />
+                        </svg>
+                    </button>
+                </div>
             </div>
-            <p id="stateText">Нажмите для подключения</p>
+            <div class="status">
+                <h2 id="stateTitle">Не защищено</h2>
+                <p id="stateText">Нажмите, чтобы подключиться</p>
+            </div>
+            <div class="stats hidden" id="stats">
+                <div class="stat"><span>Получено</span><b id="statDown">0 Б</b></div>
+                <div class="stat"><span>Отправлено</span><b id="statUp">0 Б</b></div>
+            </div>
 
             <div id="homeMessage" class="msg hidden"></div>
             <div id="serviceBanner" class="msg warn hidden"></div>

@@ -1348,11 +1348,77 @@ async function setBusy(busy, text) {
     document.body.classList.toggle("busy", busy);
     document.body.classList.toggle("connected", state.connected && !busy);
     $("#power").disabled = busy;
-    $("#stateText").textContent = busy
-        ? text
+
+    // Как на Android: крупное слово и строка под ним.
+    const server = state.servers[state.selected];
+    // Заголовок — одним словом; подробности вроде «Проверяю связь…» и
+    // «пробую соседний сервер» — строкой под ним.
+    const leaving = busy && /^Отключ/.test(text || "");
+    const title = busy
+        ? (leaving ? "Отключение…" : "Подключение…")
+        : state.connected ? "Защищено" : "Не защищено";
+    const line = busy
+        ? (text && text !== title ? text : (server ? nameWithoutFlag(server.name) : ""))
         : state.connected
-            ? state.tun ? "Подключено · весь трафик" : "Подключено · системный прокси"
-            : "Нажмите для подключения";
+            ? [server && nameWithoutFlag(server.name), state.tun ? "весь трафик" : "прокси"].filter(Boolean).join(" · ")
+            : "Нажмите, чтобы подключиться";
+    const status = $(".status");
+    if ($("#stateTitle").textContent !== title) {
+        status.classList.remove("changed");
+        void status.offsetWidth; // перезапуск анимации
+        status.classList.add("changed");
+    }
+    $("#stateTitle").textContent = title;
+    $("#stateText").textContent = line;
+    trafficWatch(state.connected && !busy);
+}
+
+/// Название узла без флага в начале: флаг уже стоит у страны на карте.
+function nameWithoutFlag(name) {
+    const text = String(name || "").trim();
+    const stripped = text.replace(/^(?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic}\uFE0F?)\s*/u, "");
+    return stripped.trim() || text;
+}
+
+// ================= получено и отправлено =================
+
+let trafficTimer = null;
+
+/// Плитки «Получено / Отправлено» — пока подключены. Спрашиваем ядро раз в
+/// две секунды и только когда окно на экране: свёрнутому окну цифры не нужны.
+function trafficWatch(on) {
+    $("#stats").classList.toggle("hidden", !on);
+    clearInterval(trafficTimer);
+    trafficTimer = null;
+    if (!on) return;
+    $("#statDown").textContent = formatBytes(0);
+    $("#statUp").textContent = formatBytes(0);
+    const tick = async () => {
+        if (document.hidden) return;
+        try {
+            const traffic = await invoke("traffic");
+            if (!traffic) return;
+            $("#statDown").textContent = formatBytes(traffic.down);
+            $("#statUp").textContent = formatBytes(traffic.up);
+        } catch {
+            // счётчики — не главное: молчим, подключение от них не зависит
+        }
+    };
+    tick();
+    trafficTimer = setInterval(tick, 2000);
+}
+
+/// Как на Android: «163,6 МБ».
+function formatBytes(bytes) {
+    const units = ["КБ", "МБ", "ГБ"];
+    if (bytes < 1024) return `${bytes} Б`;
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+    }
+    return `${value.toFixed(unit === 2 ? 2 : 1).replace(".", ",")} ${units[unit]}`;
 }
 
 // ================= мелочи =================
