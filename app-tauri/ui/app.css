@@ -1,6 +1,16 @@
 /* Оформление то же, что на сайте: тёмно-синий фон, золото, скруглённые
    карточки. Окно безрамочное, поэтому заголовок нарисован сам. */
 
+/* Шрифты те же, что в приложении на Android: Unbounded — заголовки и крупные
+   цифры, Manrope — весь текст. Лежат рядом: окно не ходит в сеть за
+   оформлением, и без интернета приложение выглядит так же. */
+@font-face { font-family: "Manrope"; src: url("fonts/manrope-400.ttf") format("truetype"); font-weight: 400; font-display: block; }
+@font-face { font-family: "Manrope"; src: url("fonts/manrope-500.ttf") format("truetype"); font-weight: 500; font-display: block; }
+@font-face { font-family: "Manrope"; src: url("fonts/manrope-600.ttf") format("truetype"); font-weight: 600; font-display: block; }
+@font-face { font-family: "Manrope"; src: url("fonts/manrope-700.ttf") format("truetype"); font-weight: 700; font-display: block; }
+@font-face { font-family: "Unbounded"; src: url("fonts/unbounded-500.ttf") format("truetype"); font-weight: 500; font-display: block; }
+@font-face { font-family: "Unbounded"; src: url("fonts/unbounded-700.ttf") format("truetype"); font-weight: 700; font-display: block; }
+
 /* Тема выбирается атрибутом data-theme. Он же вешается на образцы в окне
    выбора — поэтому селектор не привязан к html: один и тот же набор
    переменных красит и всё приложение, и картинку-образец размером с ноготь.
@@ -156,6 +166,14 @@
     --bad-rgb: 194, 65, 63;
 }
 
+:root {
+    /* Движение одно на всё приложение: быстрое начало и мягкая посадка,
+       для нажатий — с лёгким перелётом, как пружина. */
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --display: "Unbounded", "Manrope", system-ui, sans-serif;
+}
+
 * {
     box-sizing: border-box;
     -webkit-user-select: none;
@@ -172,8 +190,10 @@ body {
 body {
     background: var(--bg);
     color: var(--text);
-    font: 14px/1.5 "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    font: 14px/1.5 "Manrope", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    font-feature-settings: "tnum" 0;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
     display: flex;
     flex-direction: column;
 }
@@ -226,9 +246,10 @@ body.connected .blob { opacity: 0.42; }
 }
 
 .titlebar .name {
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.2px;
+    font-family: var(--display);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1px;
 }
 
 .titlebar .name i {
@@ -264,22 +285,34 @@ main {
     padding: 4px 18px 20px;
 }
 
-main::-webkit-scrollbar { width: 8px; }
-main::-webkit-scrollbar-thumb { background: var(--outline); border-radius: 4px; }
+main { scroll-behavior: smooth; }
+main::-webkit-scrollbar,
+.sheet .panel::-webkit-scrollbar { width: 6px; }
+main::-webkit-scrollbar-track,
+.sheet .panel::-webkit-scrollbar-track { background: transparent; }
+main::-webkit-scrollbar-thumb,
+.sheet .panel::-webkit-scrollbar-thumb { background: var(--outline); border-radius: 999px; }
+main::-webkit-scrollbar-thumb:hover,
+.sheet .panel::-webkit-scrollbar-thumb:hover { background: var(--accent-line); }
 
 .hidden { display: none !important; }
 
 .card {
     background: var(--surface);
     border: 1px solid var(--outline);
-    border-radius: 18px;
+    border-radius: 20px;
     padding: 16px;
     backdrop-filter: blur(14px);
     margin-bottom: 12px;
+    box-shadow: inset 0 1px 0 var(--gloss);
+    transition: border-color 0.3s var(--ease), box-shadow 0.3s var(--ease), transform 0.3s var(--ease);
 }
+
+.card:hover { border-color: var(--accent-line); box-shadow: inset 0 1px 0 var(--gloss), 0 10px 28px var(--shadow); }
 
 .section {
     font-size: 10px;
+    font-weight: 700;
     letter-spacing: 1.4px;
     text-transform: uppercase;
     color: var(--muted);
@@ -302,22 +335,27 @@ button, .btn {
     color: var(--text);
     background: var(--wash-soft);
     border: 1px solid var(--outline);
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 11px 16px;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, transform 0.08s;
+    transition: border-color 0.2s var(--ease), background 0.2s var(--ease), color 0.2s var(--ease),
+        box-shadow 0.25s var(--ease), transform 0.35s var(--spring);
 }
 
 button:hover { border-color: var(--accent-hover); }
-button:active { transform: scale(0.985); }
+button:active { transform: scale(0.97); transition-duration: 0.08s; }
 button:disabled { opacity: 0.45; cursor: default; transform: none; border-color: var(--outline); }
 
 button.primary {
     background: linear-gradient(180deg, var(--accent-hi), var(--accent-lo));
     border-color: transparent;
     color: var(--on-accent);
-    font-weight: 600;
+    font-weight: 700;
+    box-shadow: 0 8px 22px var(--accent-soft), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
+
+button.primary:hover { box-shadow: 0 12px 30px var(--accent-line), inset 0 1px 0 rgba(255, 255, 255, 0.3); transform: translateY(-1px); }
+button.primary:active { transform: translateY(0) scale(0.97); }
 
 button.block { width: 100%; }
 button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
@@ -335,7 +373,8 @@ input {
     user-select: text;
 }
 
-input:focus { outline: none; border-color: var(--accent); }
+input { transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease); }
+input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
 
 label.field { display: block; margin-bottom: 10px; }
 label.field > span { display: block; font-size: 11px; color: var(--muted); margin: 0 0 5px 4px; }
@@ -372,6 +411,8 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
 }
 
 #auth h1 {
+    font-family: var(--display);
+    font-weight: 700;
     font-size: 22px;
     text-align: center;
     margin: 0 0 6px;
@@ -447,44 +488,92 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     display: grid;
     place-items: center;
     cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.4s;
+    transition: transform 0.45s var(--spring), box-shadow 0.6s var(--ease);
 }
 
+/* Кольцо вокруг кнопки: серое — отключено, золотое и дышит — подключено,
+   бегущая дуга — идёт подключение. */
 .power::before {
     content: "";
     position: absolute;
     inset: -6px;
     border-radius: 50%;
     border: 2px solid var(--outline);
-    transition: border-color 0.4s, box-shadow 0.4s;
+    transition: border-color 0.6s var(--ease), box-shadow 0.6s var(--ease), opacity 0.4s;
 }
 
-.power svg { width: 62px; height: 62px; stroke: var(--muted); fill: none; stroke-width: 2; transition: stroke 0.4s; }
+/* Волна, что расходится от подключённой кнопки. */
+.power::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    opacity: 0;
+    pointer-events: none;
+}
 
-.power:hover { transform: scale(1.02); }
+.power svg {
+    width: 62px;
+    height: 62px;
+    stroke: var(--muted);
+    fill: none;
+    stroke-width: 2;
+    transition: stroke 0.6s var(--ease), transform 0.6s var(--spring), filter 0.6s var(--ease);
+}
+
+.power:hover { transform: scale(1.035); box-shadow: inset 0 1px 0 var(--gloss), 0 26px 56px var(--shadow); }
+.power:hover svg { stroke: var(--text); }
+.power:active { transform: scale(0.95); transition-duration: 0.12s; }
 .power:disabled { cursor: default; transform: none; }
 
 body.connected .power::before {
     border-color: var(--accent);
     box-shadow: 0 0 34px var(--accent-line), inset 0 0 22px var(--accent-soft);
+    animation: breathe 3.2s ease-in-out infinite;
 }
 
-body.connected .power svg { stroke: var(--accent); }
+body.connected .power::after { animation: ripple 3.2s var(--ease) infinite; }
+
+body.connected .power svg,
+body.connected .power:hover svg {
+    stroke: var(--accent);
+    transform: rotate(360deg);
+    filter: drop-shadow(0 0 10px var(--accent-line));
+}
 
 body.busy .power::before {
-    border-color: transparent;
+    border-color: var(--outline);
     border-top-color: var(--accent);
-    animation: spin 1s linear infinite;
+    border-right-color: var(--accent-line);
+    box-shadow: 0 0 24px var(--accent-soft);
+    animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
 }
+
+body.busy .power svg { stroke: var(--accent); animation: glow 1.2s ease-in-out infinite alternate; }
+
+@keyframes breathe {
+    0%, 100% { box-shadow: 0 0 26px var(--accent-line), inset 0 0 18px var(--accent-soft); }
+    50% { box-shadow: 0 0 46px var(--accent-line), inset 0 0 28px var(--accent-soft); }
+}
+
+@keyframes ripple {
+    0% { transform: scale(1); opacity: 0.55; }
+    70%, 100% { transform: scale(1.32); opacity: 0; }
+}
+
+@keyframes glow { from { opacity: 0.55; } to { opacity: 1; } }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
 #stateText {
     text-align: center;
     font-size: 14px;
+    font-weight: 600;
     color: var(--muted);
     margin: 14px 0 18px;
     min-height: 20px;
+    transition: color 0.5s var(--ease);
 }
 
 body.connected #stateText { color: var(--text); }
@@ -492,29 +581,47 @@ body.connected #stateText { color: var(--text); }
 /* ---------- переключатель режима ---------- */
 
 .segmented {
+    position: relative;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 4px;
     background: var(--sink);
     border: 1px solid var(--outline);
-    border-radius: 14px;
+    border-radius: 16px;
     padding: 4px;
 }
 
+/* Подложка выбранного режима едет, а не перескакивает. Её место задаёт
+   data-active у самого переключателя — без :has, которого нет в старых
+   WebKitGTK. */
+.segmented::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc(50% - 6px);
+    border-radius: 12px;
+    background: var(--wash);
+    box-shadow: inset 0 0 0 1px var(--accent-line), 0 4px 14px var(--shadow);
+    transition: transform 0.45s var(--spring);
+}
+
+.segmented[data-active="1"]::before { transform: translateX(calc(100% + 4px)); }
+
 .segmented button {
+    position: relative;
     border: 0;
     background: transparent;
-    border-radius: 11px;
+    border-radius: 12px;
     padding: 9px 6px;
     font-size: 13px;
+    font-weight: 600;
     color: var(--muted);
 }
 
-.segmented button[aria-selected="true"] {
-    background: var(--wash);
-    color: var(--accent);
-    box-shadow: inset 0 0 0 1px var(--accent-line);
-}
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-selected="true"] { color: var(--accent); }
 
 /* ---------- строки ---------- */
 
@@ -560,7 +667,10 @@ body.connected #stateText { color: var(--text); }
     box-shadow: 0 0 10px var(--accent);
 }
 
-.chev { color: var(--muted); font-size: 18px; line-height: 1; }
+body.connected .pick .dot { animation: glow 1.6s ease-in-out infinite alternate; }
+
+.chev { color: var(--muted); font-size: 18px; line-height: 1; transition: transform 0.35s var(--spring), color 0.2s; }
+.pick:hover .chev { transform: translateX(3px); color: var(--accent); }
 
 /* ---------- список серверов ---------- */
 
@@ -572,8 +682,11 @@ body.connected #stateText { color: var(--text); }
     backdrop-filter: blur(6px);
     display: flex;
     align-items: flex-end;
-    animation: fade 0.18s ease;
+    animation: fade 0.25s var(--ease);
 }
+
+.sheet.closing { animation: fade 0.2s var(--ease) reverse forwards; }
+.sheet.closing .panel { animation: sink 0.22s var(--ease) forwards; }
 
 .sheet .panel {
     width: 100%;
@@ -583,7 +696,8 @@ body.connected #stateText { color: var(--text); }
     border-top: 1px solid var(--outline);
     border-radius: 22px 22px 0 0;
     padding: 8px 16px 18px;
-    animation: rise 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 -18px 50px var(--shadow);
+    animation: rise 0.45s var(--ease);
 }
 
 .sheet .grip {
@@ -595,7 +709,8 @@ body.connected #stateText { color: var(--text); }
 }
 
 @keyframes fade { from { opacity: 0; } }
-@keyframes rise { from { transform: translateY(24px); } }
+@keyframes rise { from { transform: translateY(100%); } }
+@keyframes sink { to { transform: translateY(100%); } }
 
 /* ---------- вопрос при закрытии ---------- */
 
@@ -621,12 +736,12 @@ body.connected #stateText { color: var(--text); }
     padding: 20px 18px 16px;
     text-align: center;
     box-shadow: 0 22px 60px var(--shadow);
-    animation: pop 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: pop 0.4s var(--spring);
 }
 
 @keyframes pop { from { transform: scale(0.94); opacity: 0; } }
 
-.modal h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+.modal h3 { margin: 0 0 8px; font-family: var(--display); font-size: 16px; font-weight: 700; }
 .modal p { margin: 0 0 16px; line-height: 1.5; }
 .modal button.block { margin-bottom: 8px; }
 .modal button.block:last-child { margin-bottom: 0; }
@@ -647,12 +762,29 @@ button.danger:hover { border-color: var(--danger); }
     text-align: left;
     padding: 12px;
     margin-bottom: 8px;
-    border-radius: 14px;
+    border-radius: 16px;
     background: var(--wash-soft);
     border: 1px solid transparent;
+    animation: slide-in 0.45s var(--ease) both;
 }
 
+.server:hover { background: var(--wash); transform: translateX(2px); }
 .server[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
+
+/* строки списка появляются одна за другой */
+.server:nth-child(2) { animation-delay: 0.03s; }
+.server:nth-child(3) { animation-delay: 0.06s; }
+.server:nth-child(4) { animation-delay: 0.09s; }
+.server:nth-child(5) { animation-delay: 0.12s; }
+.server:nth-child(6) { animation-delay: 0.15s; }
+.server:nth-child(7) { animation-delay: 0.18s; }
+.server:nth-child(n + 8) { animation-delay: 0.21s; }
+
+/* Перерисовка списка после замера пинга — уже не появление: без повторной
+   анимации строки не мигали бы при каждом результате. */
+#serverList.settled .server { animation: none; }
+
+@keyframes slide-in { from { opacity: 0; transform: translateY(10px); } }
 .server .flag { font-size: 20px; }
 
 .spinner {
@@ -778,6 +910,7 @@ button.danger:hover { border-color: var(--danger); }
     color: rgb(var(--ping));
     background: rgba(var(--ping), 0.14);
     border: 1px solid rgba(var(--ping), 0.32);
+    animation: pop 0.4s var(--spring);
 }
 
 .ping.good { --ping: var(--good-rgb); }
@@ -866,7 +999,7 @@ button.danger:hover { border-color: var(--danger); }
     background: rgba(255, 255, 255, 0.14);
     position: relative;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.25s var(--ease);
     flex: none;
 }
 
@@ -879,7 +1012,8 @@ button.danger:hover { border-color: var(--danger); }
     height: 16px;
     border-radius: 50%;
     background: #fff;
-    transition: transform 0.15s;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    transition: transform 0.4s var(--spring);
 }
 
 .switch-row input[type="checkbox"]:checked {
@@ -894,4 +1028,38 @@ button.danger:hover { border-color: var(--danger); }
     margin: 6px 0 0;
     font-size: 11px;
     opacity: 0.6;
+}
+
+/* ---------- появление экранов ---------- */
+
+/* Экран входа и главный появляются плавно, блок за блоком. */
+#auth:not(.hidden) > *,
+#home:not(.hidden) > * {
+    animation: slide-in 0.55s var(--ease) both;
+}
+
+#auth > :nth-child(2), #home > :nth-child(2) { animation-delay: 0.04s; }
+#auth > :nth-child(3), #home > :nth-child(3) { animation-delay: 0.08s; }
+#auth > :nth-child(4), #home > :nth-child(4) { animation-delay: 0.12s; }
+#auth > :nth-child(5), #home > :nth-child(5) { animation-delay: 0.16s; }
+#auth > :nth-child(6), #home > :nth-child(6) { animation-delay: 0.2s; }
+#auth > :nth-child(n + 7), #home > :nth-child(n + 7) { animation-delay: 0.24s; }
+
+/* Крупные цифры — тем же шрифтом, что заголовки, как на Android. */
+#days {
+    font-family: var(--display);
+    font-weight: 700 !important;
+    letter-spacing: -0.5px;
+}
+
+/* Кто попросил систему поменьше анимаций — тот её почти не увидит. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }

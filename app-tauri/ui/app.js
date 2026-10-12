@@ -73,9 +73,9 @@ $("#exitAsk").addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!$("#exitAsk").classList.contains("hidden")) closeAsk();
-    else if (!$("#themeSheet").classList.contains("hidden")) $("#themeSheet").classList.add("hidden");
-    else if (!$("#pickSheet").classList.contains("hidden")) $("#pickSheet").classList.add("hidden");
-    else if (!$("#sheet").classList.contains("hidden")) $("#sheet").classList.add("hidden");
+    else if (!$("#themeSheet").classList.contains("hidden")) closeSheet($("#themeSheet"));
+    else if (!$("#pickSheet").classList.contains("hidden")) closeSheet($("#pickSheet"));
+    else if (!$("#sheet").classList.contains("hidden")) closeSheet($("#sheet"));
 });
 
 $("#exitHide").addEventListener("click", () => {
@@ -99,6 +99,17 @@ window.__TAURI__.event.listen("tray", async (event) => {
     if (event.payload === "connect" && !state.connected && !state.busy) await connect();
     if (event.payload === "disconnect" && state.connected && !state.busy) await disconnectNow();
 });
+
+/// Нижняя панель уезжает вниз, а не пропадает разом: класс .closing
+/// проигрывает обратное движение, потом панель прячется совсем.
+function closeSheet(sheet) {
+    if (!sheet || sheet.classList.contains("hidden") || sheet.classList.contains("closing")) return;
+    sheet.classList.add("closing");
+    setTimeout(() => {
+        sheet.classList.remove("closing");
+        sheet.classList.add("hidden");
+    }, 220);
+}
 
 function message(node, text, type = "err") {
     node.className = `msg ${type}`;
@@ -489,7 +500,7 @@ function openPicker(title, items, onPick, note) {
             `<span class="tiny muted">${escape(item.subtitle || "")}</span></span>` +
             (item.right ? `<span class="gold">${escape(item.right)}</span>` : "");
         button.addEventListener("click", async () => {
-            $("#pickSheet").classList.add("hidden");
+            closeSheet($("#pickSheet"));
             await onPick(index);
         });
         list.append(button);
@@ -506,7 +517,7 @@ function openPicker(title, items, onPick, note) {
 }
 
 $("#pickSheet").addEventListener("click", (event) => {
-    if (event.target === $("#pickSheet")) $("#pickSheet").classList.add("hidden");
+    if (event.target === $("#pickSheet")) closeSheet($("#pickSheet"));
 });
 
 // ================= баланс, тарифы, продление =================
@@ -1138,12 +1149,15 @@ function pingChip(millis) {
 }
 
 $("#serverPick").addEventListener("click", () => {
+    $("#serverList").classList.remove("settled");
     renderServerList();
     $("#sheet").classList.remove("hidden");
 });
 
 function renderServerList() {
     const list = $("#serverList");
+    // список уже на экране — строки не должны появляться заново
+    list.classList.toggle("settled", !$("#sheet").classList.contains("hidden"));
     list.innerHTML = "";
     state.servers.forEach((server, index) => {
         const button = document.createElement("button");
@@ -1160,7 +1174,7 @@ function renderServerList() {
             state.selected = index;
             localStorage.setItem("dp_server", String(index));
             renderServer();
-            $("#sheet").classList.add("hidden");
+            closeSheet($("#sheet"));
             if (state.connected) await connect(); // на лету переключаемся на выбранный узел
         });
         list.append(button);
@@ -1186,7 +1200,7 @@ $("#pingButton").addEventListener("click", async () => {
 });
 
 $("#sheet").addEventListener("click", (event) => {
-    if (event.target === $("#sheet")) $("#sheet").classList.add("hidden");
+    if (event.target === $("#sheet")) closeSheet($("#sheet"));
 });
 
 $("#refresh").addEventListener("click", loadSubscription);
@@ -1214,6 +1228,8 @@ function renderMode() {
     $$("#modes button").forEach((button) =>
         button.setAttribute("aria-selected", String((button.dataset.mode === "tun") === state.tun))
     );
+    // подложка выбранного режима едет к нему — см. .segmented::before
+    $("#modes").dataset.active = state.tun ? "1" : "0";
     $("#modeHint").textContent = state.tun
         ? "Перехватывает трафик всех программ. Нужен запуск от имени администратора."
         : "Без прав администратора. Браузеры и большинство программ.";
@@ -1497,7 +1513,7 @@ $("#themeButton").addEventListener("click", () => {
 });
 
 $("#themeSheet").addEventListener("click", (event) => {
-    if (event.target === $("#themeSheet")) $("#themeSheet").classList.add("hidden");
+    if (event.target === $("#themeSheet")) closeSheet($("#themeSheet"));
 });
 
 // ================= карта =================

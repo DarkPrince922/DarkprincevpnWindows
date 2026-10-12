@@ -28,6 +28,8 @@ struct App {
     servers: Mutex<Vec<Server>>,
     /// Нужен при выходе: по этим путям добиваем свои процессы.
     core_dir: PathBuf,
+    /// Сюда временное ядро для замера задержки кладёт свой конфиг.
+    data_dir: PathBuf,
 }
 
 /// Выход уже начат. Флаг разрывает круг: `exit` закрывает окно, окно снова
@@ -221,15 +223,14 @@ fn measure(address: &str, port: u16) -> i64 {
 }
 
 /// Задержка до всех узлов подписки, в порядке списка.
+///
+/// Узлы поверх UDP (Hysteria2 и подобные) TCP-соединение не принимают —
+/// их меряем через само ядро, см. `dp_engine::real_delay`.
 #[tauri::command]
 async fn ping_servers(app: TauriState<'_, App>) -> Result<Vec<i64>, String> {
-    let targets: Vec<(String, u16)> = app
-        .servers
-        .lock()
-        .unwrap()
-        .iter()
-        .map(|server| (server.address.clone(), server.port))
-        .collect();
+    let targets: Vec<Server> = app.servers.lock().unwrap().clone();
+    let core_dir = app.core_dir.clone();
+    let work_dir = app.data_dir.join("ping");
 
     // Замер блокирующий, поэтому уводим его с потока окна целиком: иначе
     // на время проверки интерфейс перестанет отвечать.
@@ -239,7 +240,16 @@ async fn ping_servers(app: TauriState<'_, App>) -> Result<Vec<i64>, String> {
             let measured: Vec<i64> = std::thread::scope(|scope| {
                 let handles: Vec<_> = batch
                     .iter()
-                    .map(|(address, port)| scope.spawn(move || measure(address, *port)))
+                    .map(|server| {
+                        let (core_dir, work_dir) = (&core_dir, &work_dir);
+                        scope.spawn(move || {
+                            if dp_engine::over_udp(server) {
+                                dp_engine::real_delay(core_dir, work_dir, server)
+                            } else {
+                                measure(&server.address, server.port)
+                            }
+                        })
+                    })
                     .collect();
                 handles
                     .into_iter()
@@ -575,12 +585,13 @@ fn main() {
             // следы прошлого запуска, если его завершили жёстко
             Vpn::clear_stale_state(&core_dir);
 
-            let vpn = Arc::new(Mutex::new(Vpn::new(core_dir.clone(), data_dir)));
+            let vpn = Arc::new(Mutex::new(Vpn::new(core_dir.clone(), data_dir.clone())));
             watch_network(Arc::clone(&vpn));
             app.manage(App {
                 vpn,
                 servers: Mutex::new(Vec::new()),
                 core_dir,
+                data_dir,
             });
 
             // Значок в панели задач. Приложение продолжает работать с

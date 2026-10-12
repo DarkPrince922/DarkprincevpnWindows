@@ -233,6 +233,73 @@ impl Drop for Vpn {
     }
 }
 
+/// Узел ходит поверх UDP (QUIC и подобное). До такого узла TCP-соединение не
+/// установить, и обычный замер показывал бы «не отвечает» у рабочего сервера.
+pub fn over_udp(server: &Server) -> bool {
+    let protocol = server.protocol.to_ascii_lowercase();
+    let network = server.network.to_ascii_lowercase();
+    matches!(protocol.as_str(), "hysteria" | "hysteria2" | "tuic" | "wireguard")
+        || matches!(network.as_str(), "kcp" | "mkcp" | "quic" | "hysteria")
+}
+
+/// Задержка до узла через само ядро, в миллисекундах; -1 — не ответил.
+///
+/// Для узлов поверх UDP: поднимаем отдельное ядро с конфигом узла на
+/// свободных портах и делаем два запроса. Первый устанавливает соединение
+/// (QUIC, авторизация), второй идёт по готовому — его время и показываем:
+/// оно сравнимо с замером остальных узлов, где время — одно соединение TCP.
+/// Блокирующая, до пары секунд — только с фонового потока.
+pub fn real_delay(core_dir: &Path, work_dir: &Path, server: &Server) -> i64 {
+    let core = core_dir.join("xray.exe");
+    if !core.exists() {
+        return -1;
+    }
+    let socks = sys::free_port();
+    let http = (0..5).map(|_| sys::free_port()).find(|port| *port != socks).unwrap_or(0);
+    let Ok(built) = config::build(&server.raw_config, socks, http) else {
+        return -1;
+    };
+    std::fs::create_dir_all(work_dir).ok();
+    let config_path = work_dir.join(format!("ping-{http}.json"));
+    if std::fs::write(&config_path, built).is_err() {
+        return -1;
+    }
+    let child = sys::command(&core.to_string_lossy())
+        .args(["run", "-c", &config_path.to_string_lossy()])
+        .current_dir(core_dir)
+        .env("XRAY_LOCATION_ASSET", core_dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let result = match child {
+        Ok(mut child) => {
+            let delay = if sys::wait_for_port(http, Duration::from_secs(4)) {
+                match timed_probe(http) {
+                    Some(first) => timed_probe(http).unwrap_or(first) as i64,
+                    None => -1,
+                }
+            } else {
+                -1
+            };
+            let _ = child.kill();
+            let _ = child.wait();
+            delay
+        }
+        Err(_) => -1,
+    };
+    std::fs::remove_file(&config_path).ok();
+    result
+}
+
+/// Время удачного запроса через HTTP-вход ядра.
+fn timed_probe(port: u16) -> Option<u128> {
+    PROBE_TARGETS.iter().find_map(|(host, path)| {
+        let start = std::time::Instant::now();
+        request_via_http_proxy(port, host, path, Duration::from_secs(4))
+            .then(|| start.elapsed().as_millis())
+    })
+}
+
 /// Адреса для проверки связи. Два разных: правила маршрутизации из подписки
 /// могут пустить один из них мимо прокси или заблокировать, и тогда «нет
 /// связи» было бы ложным. Обычный HTTP: ответ 204 без тела, шифровать нечего.
@@ -257,6 +324,10 @@ pub fn probe(http_port: u16) -> bool {
 }
 
 fn probe_via_http_proxy(port: u16, host: &str, path: &str) -> bool {
+    request_via_http_proxy(port, host, path, Duration::from_secs(6))
+}
+
+fn request_via_http_proxy(port: u16, host: &str, path: &str, read_timeout: Duration) -> bool {
     use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};
 
@@ -264,7 +335,7 @@ fn probe_via_http_proxy(port: u16, host: &str, path: &str) -> bool {
     let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_secs(2)) else {
         return false;
     };
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(6)));
+    let _ = stream.set_read_timeout(Some(read_timeout));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
     let request =
         format!("GET http://{host}{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
