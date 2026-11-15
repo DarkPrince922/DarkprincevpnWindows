@@ -552,8 +552,9 @@ fn watch_network(vpn: Arc<Mutex<Vpn>>) {
             continue;
         }
         let (gateway, gateway6) = dp_engine::tun::current_gateways();
+        let interface = dp_engine::tun::default_interface();
         if let Ok(mut vpn) = vpn.try_lock() {
-            vpn.follow_gateways(gateway, gateway6);
+            vpn.follow_gateways(gateway, gateway6, interface);
         }
     });
 }

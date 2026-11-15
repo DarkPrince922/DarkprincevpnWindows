@@ -20,10 +20,10 @@
 :root,
 [data-theme="night"] {
     color-scheme: dark;
-    --bg: #0a0e17;
-    --surface: rgba(23, 34, 54, 0.72);
+    --bg: #080c15;
+    --surface: rgba(20, 29, 47, 0.66);
     --surface-solid: #121a29;
-    --outline: rgba(94, 116, 160, 0.28);
+    --outline: rgba(120, 142, 190, 0.2);
     --accent: #cfaa62;
     --accent-soft: rgba(207, 170, 98, 0.16);
     --accent-line: rgba(207, 170, 98, 0.4);
@@ -32,6 +32,7 @@
     --accent-lo: #c09347;
     --on-accent: #1a1408;
     --accent-2: #5e8bff;
+    --accent-2-rgb: 94, 139, 255;
     --text: #edf0f7;
     --muted: #9aa6bd;
     --danger: #e05b5b;
@@ -52,7 +53,7 @@
     --shadow: rgba(0, 0, 0, 0.5);
     --power-hi: rgba(38, 52, 80, 0.9);
     --power-lo: rgba(16, 23, 38, 0.95);
-    --blob-opacity: 0.26;
+    --blob-opacity: 0.34;
     --good-rgb: 63, 182, 139;
     --fair-rgb: 224, 169, 74;
     --bad-rgb: 224, 91, 91;
@@ -72,6 +73,7 @@
     --accent-lo: #e06b3e;
     --on-accent: #2a1206;
     --accent-2: #c77dff;
+    --accent-2-rgb: 199, 125, 255;
     --text: #f7edf3;
     --muted: #bca6c4;
     --danger: #e05b5b;
@@ -88,7 +90,7 @@
     --shadow: rgba(0, 0, 0, 0.5);
     --power-hi: rgba(66, 46, 80, 0.9);
     --power-lo: rgba(34, 24, 42, 0.95);
-    --blob-opacity: 0.3;
+    --blob-opacity: 0.36;
     --good-rgb: 63, 182, 139;
     --fair-rgb: 224, 169, 74;
     --bad-rgb: 224, 91, 91;
@@ -108,6 +110,7 @@
     --accent-lo: #4338ca;
     --on-accent: #ffffff;
     --accent-2: #1d9bdb;
+    --accent-2-rgb: 29, 155, 219;
     --text: #161a38;
     --muted: #5b6488;
     --danger: #c2413f;
@@ -124,7 +127,7 @@
     --shadow: rgba(30, 40, 80, 0.18);
     --power-hi: #ffffff;
     --power-lo: #dde5f4;
-    --blob-opacity: 0.22;
+    --blob-opacity: 0.26;
     --good-rgb: 46, 158, 102;
     --fair-rgb: 176, 125, 30;
     --bad-rgb: 194, 65, 63;
@@ -144,6 +147,7 @@
     --accent-lo: #1c1c1e;
     --on-accent: #ffffff;
     --accent-2: #5a5a62;
+    --accent-2-rgb: 90, 90, 98;
     --text: #121214;
     --muted: #6a6a72;
     --danger: #b23a38;
@@ -160,7 +164,7 @@
     --shadow: rgba(0, 0, 0, 0.14);
     --power-hi: #ffffff;
     --power-lo: #e3e3e6;
-    --blob-opacity: 0.16;
+    --blob-opacity: 0.18;
     --good-rgb: 46, 158, 102;
     --fair-rgb: 176, 125, 30;
     --bad-rgb: 194, 65, 63;
@@ -187,8 +191,13 @@ body {
     overflow: hidden;
 }
 
+/* Фон: холодное сияние сверху и сбоку. Золото — только за кнопкой и только
+   при подключении (см. .blob): раньше три пятна давали бурую муть по краям. */
 body {
-    background: var(--bg);
+    background:
+        radial-gradient(90% 46% at 50% -6%, rgba(var(--accent-2-rgb), 0.2), transparent 70%),
+        radial-gradient(70% 40% at 100% 62%, rgba(var(--accent-2-rgb), 0.1), transparent 70%),
+        var(--bg);
     color: var(--text);
     font: 14px/1.5 "Manrope", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
     font-feature-settings: "tnum" 0;
@@ -211,16 +220,17 @@ body {
     position: absolute;
     border-radius: 50%;
     filter: blur(78px);
-    opacity: var(--blob-opacity);
+    opacity: 0;
     animation: drift 26s ease-in-out infinite alternate;
     transition: opacity 0.8s;
 }
 
-.blob.a { width: 340px; height: 340px; left: -18%; top: -10%; background: var(--accent); }
-.blob.b { width: 320px; height: 320px; right: -20%; top: 18%; background: var(--accent-2); animation-duration: 33s; }
-.blob.c { width: 300px; height: 300px; left: 10%; bottom: -14%; background: var(--accent); animation-duration: 29s; }
+/* Одно пятно — за кнопкой; загорается при подключении. */
+.blob.a { width: 300px; height: 300px; left: 50%; top: 120px; margin-left: -150px; background: var(--accent); }
+.blob.b,
+.blob.c { display: none; }
 
-body.connected .blob { opacity: 0.42; }
+body.connected .blob.a { opacity: var(--blob-opacity); }
 
 @keyframes drift {
     from { transform: translate(-26px, -18px) scale(1); }
@@ -298,12 +308,12 @@ main::-webkit-scrollbar-thumb:hover,
 .hidden { display: none !important; }
 
 .card {
-    background: var(--surface);
+    background: linear-gradient(180deg, var(--wash-soft), transparent), var(--surface);
     border: 1px solid var(--outline);
-    border-radius: 20px;
-    padding: 16px;
+    border-radius: 18px;
+    padding: 14px 16px;
     backdrop-filter: blur(14px);
-    margin-bottom: 12px;
+    margin-bottom: 14px;
     box-shadow: inset 0 1px 0 var(--gloss);
     transition: border-color 0.3s var(--ease), box-shadow 0.3s var(--ease), transform 0.3s var(--ease);
 }
@@ -316,7 +326,20 @@ main::-webkit-scrollbar-thumb:hover,
     letter-spacing: 1.4px;
     text-transform: uppercase;
     color: var(--muted);
-    margin: 0 0 8px 4px;
+    margin: 2px 0 8px 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* золотая чёрточка перед названием раздела */
+.section::before {
+    content: "";
+    width: 10px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+    flex: none;
 }
 
 .muted { color: var(--muted); }
@@ -456,7 +479,7 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     position: relative;
     display: grid;
     place-items: center;
-    padding: 28px 0 0;
+    padding: 14px 0 0;
 }
 
 /* Карта выходит за поля main: у неё растворяются края, и обрезать её ровно
@@ -483,32 +506,40 @@ label.field > span { display: block; font-size: 11px; color: var(--muted); margi
     z-index: 1;
     display: grid;
     place-items: center;
-    width: 276px;
-    height: 276px;
+    width: 252px;
+    height: 252px;
 }
 
 /* тонкое кольцо по краю сцены */
 .power-stage::before {
     content: "";
     position: absolute;
-    inset: 18px;
+    inset: 10px;
     border-radius: 50%;
     border: 1px solid var(--wash);
 }
 
-/* пунктирное кольцо вплотную к кнопке */
+/* Ободок с насечками вплотную к кнопке, как у часов. Насечки — конический
+   градиент, а маска оставляет от него только узкое кольцо. Цвет лежит в
+   переменной: подключено — золото, подключаемся — синий. */
 .power-stage::after {
     content: "";
     position: absolute;
-    inset: 32px;
+    inset: 24px;
     border-radius: 50%;
-    border: 1px dashed var(--outline);
-    transition: border-color 0.6s var(--ease);
+    --tick: var(--outline);
+    background: repeating-conic-gradient(var(--tick) 0 1deg, transparent 1deg 6deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
 }
 
-body.connected .power-stage::after { border-color: var(--accent-line); }
+body.connected .power-stage::after {
+    --tick: var(--accent);
+    animation: spin 60s linear infinite;
+}
+
 body.busy .power-stage::after {
-    border-color: rgba(94, 139, 255, 0.55);
+    --tick: rgba(94, 139, 255, 0.75);
     animation: spin 6s linear infinite;
 }
 
@@ -534,9 +565,9 @@ body.connected .halo::before { opacity: 1; }
 /* две волны: расходятся от кнопки к краю сцены, по очереди */
 .halo i {
     position: absolute;
-    inset: 45px;
+    inset: 42px;
     border-radius: 50%;
-    border: 2px solid var(--accent);
+    border: 1.5px solid var(--accent);
     opacity: 0;
 }
 
@@ -551,8 +582,8 @@ body.connected .halo i + i { animation-delay: -1.3s; }
 .power {
     position: relative;
     z-index: 1;
-    width: 186px;
-    height: 186px;
+    width: 168px;
+    height: 168px;
     border-radius: 50%;
     border: 1px solid var(--outline);
     background: radial-gradient(circle at 50% 35%, var(--power-hi), var(--power-lo));
@@ -582,11 +613,11 @@ body.connected .halo i + i { animation-delay: -1.3s; }
 .power svg {
     position: relative;
     z-index: 1;
-    width: 66px;
-    height: 66px;
+    width: 58px;
+    height: 58px;
     stroke: var(--muted);
     fill: none;
-    stroke-width: 2.2;
+    stroke-width: 2;
     transition: stroke 0.6s var(--ease), transform 0.6s var(--spring);
 }
 
@@ -597,7 +628,7 @@ body.connected .halo i + i { animation-delay: -1.3s; }
 
 body.connected .power {
     border-color: transparent;
-    box-shadow: 0 18px 50px var(--accent-line);
+    box-shadow: 0 16px 46px var(--accent-line), 0 0 0 6px var(--accent-soft);
     animation: breathe 2.6s ease-in-out infinite alternate;
 }
 
@@ -626,13 +657,14 @@ body.busy .power svg { stroke: var(--accent-2); animation: glow 0.9s ease-in-out
 
 /* Крупное слово и строка под ним: «защищено или нет» читается за полсекунды,
    остальное — потом. */
-.status { text-align: center; margin: 4px 0 18px; }
+.status { text-align: center; margin: 2px 0 16px; }
 
 #stateTitle {
     margin: 0 0 4px;
     font-family: var(--display);
     font-weight: 700;
-    font-size: 25px;
+    font-size: 24px;
+    letter-spacing: -0.3px;
     line-height: 1.25;
     color: var(--muted);
     transition: color 0.5s var(--ease);
@@ -647,37 +679,93 @@ body.connected #stateTitle { color: var(--text); }
     color: var(--muted);
 }
 
+/* зелёная точка «на связи» перед подписью */
+body.connected #stateText::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 4px rgba(var(--good-rgb), 0.18);
+    margin-right: 8px;
+    vertical-align: 1px;
+}
+
 .status.changed { animation: fade-up 0.35s var(--ease); }
 
 @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } }
 
 /* ---------- получено и отправлено ---------- */
 
+/* Одна карточка на оба числа, с разделителем и стрелками: две отдельные
+   коробки занимали столько же места, сколько кнопка, и спорили с ней. */
 .stats {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
     margin: -4px 0 18px;
+    background: linear-gradient(180deg, var(--wash-soft), transparent), var(--surface);
+    border: 1px solid var(--outline);
+    border-radius: 18px;
+    backdrop-filter: blur(14px);
+    box-shadow: inset 0 1px 0 var(--gloss);
     animation: slide-in 0.45s var(--ease);
 }
 
 .stat {
-    background: var(--surface);
-    border: 1px solid var(--outline);
-    border-radius: 20px;
-    padding: 12px 16px 13px;
-    backdrop-filter: blur(14px);
+    position: relative;
+    padding: 12px 14px 12px 50px;
+    min-width: 0;
+    --stat-rgb: var(--good-rgb);
+    --stat-ink: var(--ok);
 }
 
-.stat span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
+.stat + .stat {
+    border-left: 1px solid var(--outline);
+    --stat-rgb: var(--accent-2-rgb);
+    --stat-ink: var(--accent-2);
+}
+
+/* плашка под стрелкой */
+.stat::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    width: 26px;
+    height: 26px;
+    margin-top: -13px;
+    border-radius: 9px;
+    background: rgba(var(--stat-rgb), 0.15);
+}
+
+/* стрелка: вниз — получено, вверх — отправлено */
+.stat::after {
+    content: "";
+    position: absolute;
+    left: 20px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
+    background: var(--stat-ink);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v16M5 13l7 7 7-7'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v16M5 13l7 7 7-7'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.stat + .stat::after { transform: rotate(180deg); }
+
+.stat span { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
 
 .stat b {
     display: block;
-    margin-top: 2px;
+    margin-top: 1px;
     font-family: var(--display);
     font-weight: 500;
-    font-size: 21px;
+    font-size: 16px;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ---------- переключатель режима ---------- */
@@ -689,7 +777,7 @@ body.connected #stateTitle { color: var(--text); }
     gap: 4px;
     background: var(--sink);
     border: 1px solid var(--outline);
-    border-radius: 16px;
+    border-radius: 14px;
     padding: 4px;
 }
 
@@ -703,9 +791,10 @@ body.connected #stateTitle { color: var(--text); }
     bottom: 4px;
     left: 4px;
     width: calc(50% - 6px);
-    border-radius: 12px;
-    background: var(--wash);
-    box-shadow: inset 0 0 0 1px var(--accent-line), 0 4px 14px var(--shadow);
+    border-radius: 10px;
+    /* выбранный режим залит цветом темы: видно с первого взгляда */
+    background: linear-gradient(180deg, var(--accent-hi), var(--accent-lo));
+    box-shadow: 0 6px 16px var(--accent-soft), inset 0 1px 0 rgba(255, 255, 255, 0.3);
     transition: transform 0.45s var(--spring);
 }
 
@@ -722,8 +811,8 @@ body.connected #stateTitle { color: var(--text); }
     color: var(--muted);
 }
 
-.segmented button:hover { color: var(--text); }
-.segmented button[aria-selected="true"] { color: var(--accent); }
+.segmented button:not([aria-selected="true"]):hover { color: var(--text); }
+.segmented button[aria-selected="true"] { color: var(--on-accent); font-weight: 700; }
 
 /* ---------- строки ---------- */
 
@@ -740,14 +829,20 @@ body.connected #stateTitle { color: var(--text); }
 .kv .k { color: var(--muted); }
 
 .bar {
-    height: 5px;
+    height: 6px;
     border-radius: 999px;
     background: var(--sink);
     overflow: hidden;
     margin: 10px 0 4px;
 }
 
-.bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hi)); }
+.bar > i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-hi));
+    box-shadow: 0 0 10px var(--accent-line);
+}
 
 .pick {
     display: flex;
@@ -1033,9 +1128,11 @@ button.danger:hover { border-color: var(--danger); }
 .sheet .section.with-action {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
 }
+
+/* чёрточка и название держатся слева вместе, кнопка уходит вправо */
+.sheet .section.with-action > span { margin-right: auto; }
 
 /* ---------- значки транспорта ---------- */
 
