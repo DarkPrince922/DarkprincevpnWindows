@@ -6,7 +6,7 @@
 
 param(
     [string]$OutputDirectory = "$PSScriptRoot\..\artifacts\core",
-    [string]$XrayVersion = "v26.7.28",
+    [string]$XrayVersion = "v26.11.9",
     [string]$Tun2SocksVersion = "v2.7.0",
     [string]$WintunVersion = "0.14.1"
 )
