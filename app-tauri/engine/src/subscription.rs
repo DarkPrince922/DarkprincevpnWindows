@@ -15,6 +15,9 @@ pub struct Server {
     /// Полный конфиг Xray этого узла.
     pub raw_config: String,
     pub address: String,
+    /// Адреса всех серверов конфига. С балансировщиком их несколько, и в
+    /// режиме «весь трафик» путь мимо туннеля нужен до каждого.
+    pub addresses: Vec<String>,
     pub port: u16,
     /// Транспорт: tcp, ws, grpc, xhttp…
     pub network: String,
@@ -119,11 +122,13 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
         };
 
         let mut address = String::new();
+        let mut addresses: Vec<String> = Vec::new();
         let mut port = 443u16;
         let mut network = "tcp".to_string();
         let mut security = "none".to_string();
         let mut protocol = String::new();
 
+        let mut found = false;
         for outbound in outbounds {
             let name = outbound
                 .get("protocol")
@@ -134,8 +139,19 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
             if name.is_empty() || matches!(name.as_str(), "freedom" | "blackhole" | "dns" | "loopback") {
                 continue;
             }
+            let server = first_server(outbound.get("settings"));
+            if let Some(value) = server.and_then(|server| server.get("address")).and_then(Value::as_str) {
+                if !value.is_empty() && !addresses.iter().any(|known| known == value) {
+                    addresses.push(value.to_string());
+                }
+            }
+            // Показываем первый узел; остальные нужны только адресами.
+            if found {
+                continue;
+            }
+            found = true;
             protocol = name;
-            if let Some(server) = first_server(outbound.get("settings")) {
+            if let Some(server) = server {
                 if let Some(value) = server.get("address").and_then(Value::as_str) {
                     address = value.to_string();
                 }
@@ -151,7 +167,6 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
                     security = value.to_string();
                 }
             }
-            break;
         }
 
         // Remnawave кладёт Server Description в корень конфига. Оба написания:
@@ -182,6 +197,7 @@ fn parse_xray_json(text: &str) -> Vec<Server> {
             name,
             raw_config: config.to_string(),
             address,
+            addresses,
             port,
             network,
             security,
@@ -311,6 +327,24 @@ mod tests {
                  "streamSettings":{"network":"tcp","security":"reality"}}]}]"#,
         );
         assert_eq!(servers[0].address, "fi.example.net");
+    }
+
+    /// С балансировщиком серверов в конфиге несколько: показываем первый,
+    /// но путь мимо туннеля нужен до каждого.
+    #[test]
+    fn every_server_address_is_collected() {
+        let servers = parse(
+            r#"[{"remarks":"bal","outbounds":[
+                {"protocol":"vless","settings":{"vnext":[{"address":"a.example.net","port":443}]},
+                 "streamSettings":{"network":"xhttp","security":"reality"}},
+                {"protocol":"freedom","tag":"direct"},
+                {"protocol":"trojan","settings":{"servers":[{"address":"b.example.net","port":8443}]}},
+                {"protocol":"vless","settings":{"address":"a.example.net","port":2053}}]}]"#,
+        );
+        assert_eq!(servers[0].address, "a.example.net");
+        assert_eq!(servers[0].port, 443);
+        assert_eq!(servers[0].transport_label(), "vless · reality · xhttp");
+        assert_eq!(servers[0].addresses, ["a.example.net", "b.example.net"]);
     }
 
     #[test]

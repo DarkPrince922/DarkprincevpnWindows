@@ -325,6 +325,35 @@ pub fn current_gateways() -> (Option<String>, Option<Gateway6>) {
     (default_gateway(), default_gateway6())
 }
 
+/// Имя интерфейса, через который система выходит в сеть, — к нему в режиме
+/// «весь трафик» привязываются выходы ядра.
+///
+/// Имя в русской Windows — «Беспроводная сеть», а вывод PowerShell приходит
+/// в кодировке консоли, и такое имя доехало бы испорченным: ядро не нашло бы
+/// интерфейс и не открыло бы ни одного соединения. Поэтому просим имя
+/// байтами UTF-8 в шестнадцатеричной записи — её кодировка не портит.
+pub fn default_interface() -> Option<String> {
+    let text = sys::powershell(
+        "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | \
+         Where-Object { $_.NextHop -ne '0.0.0.0' } | \
+         Sort-Object RouteMetric | Select-Object -First 1; \
+         if ($r) { [BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes($r.InterfaceAlias)) }",
+    )?;
+    parse_interface(&text)
+}
+
+/// Разбирает `D0-91-D0-B5-…` обратно в имя. Туннель интерфейсом сети не
+/// считаем: привязать к нему выходы ядра значило бы зациклить трафик.
+fn parse_interface(text: &str) -> Option<String> {
+    let bytes: Option<Vec<u8>> = text
+        .trim()
+        .split('-')
+        .map(|pair| u8::from_str_radix(pair, 16).ok())
+        .collect();
+    let name = String::from_utf8(bytes?).ok()?;
+    (!name.is_empty() && name != ADAPTER).then_some(name)
+}
+
 /// Аргументы `netsh interface ipv6 add|delete route`. Только в активное
 /// хранилище: после перезагрузки маршрутов остаться не должно.
 fn route6_args(action: &str, prefix: &str, index: u32, next_hop: Option<&str>) -> Vec<String> {
@@ -418,6 +447,26 @@ mod tests {
         let delete = route6_args("delete", "2001:db8::7/128", 3, Some("fe80::1"));
         assert!(delete.contains(&"nexthop=fe80::1".to_string()));
         assert!(!delete.contains(&"store=active".to_string()));
+    }
+
+    #[test]
+    fn interface_name_survives_any_console_encoding() {
+        // «Беспроводная сеть» байтами UTF-8, как их отдаёт BitConverter
+        let hex = "Беспроводная сеть"
+            .bytes()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join("-");
+        assert_eq!(parse_interface(&format!("{hex}\r\n")), Some("Беспроводная сеть".into()));
+        assert_eq!(parse_interface("45-74-68-65-72-6E-65-74"), Some("Ethernet".into()));
+        assert_eq!(parse_interface("Ethernet"), None, "не шестнадцатеричная запись — не имя");
+        assert_eq!(parse_interface(""), None);
+    }
+
+    #[test]
+    fn tunnel_itself_is_never_the_network_interface() {
+        let hex = ADAPTER.bytes().map(|byte| format!("{byte:02X}")).collect::<Vec<_>>().join("-");
+        assert_eq!(parse_interface(&hex), None);
     }
 
     #[test]
