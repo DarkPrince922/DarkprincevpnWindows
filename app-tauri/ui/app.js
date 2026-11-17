@@ -453,11 +453,11 @@ async function loadSubscription() {
     renderSubSwitcher();
 
     if (!url) {
-        message(
-            $("#homeMessage"),
-            accountError?.message || "Подписки нет. Оформите тариф в личном кабинете."
-        );
-        serverEmpty("Подписки нет");
+        // Нет подписки — не ошибка: говорим спокойно и один раз, а не красным.
+        if (accountError) message($("#homeMessage"), accountError.message);
+        serverEmpty(accountError
+            ? "Серверы не загрузились"
+            : "Серверы появятся, когда будет подписка. Выберите тариф во вкладке «Тарифы».");
         return;
     }
 
@@ -545,7 +545,7 @@ async function switchSubscription(index) {
 
 // ================= общий выбор =================
 
-function openPicker(title, items, onPick, note) {
+function openPicker(title, items, onPick, note, emptyText) {
     $("#pickTitle").textContent = title;
     message($("#pickMessage"), note || "", "info");
     const list = $("#pickList");
@@ -569,7 +569,7 @@ function openPicker(title, items, onPick, note) {
     if (!items.length) {
         const empty = document.createElement("p");
         empty.className = "hint";
-        empty.textContent = "Вариантов нет.";
+        empty.textContent = emptyText || "Вариантов нет.";
         list.append(empty);
     }
     $("#pickSheet").classList.remove("hidden");
@@ -768,9 +768,10 @@ function renderTariffs() {
     if (!state.tariffs) return;
     list.innerHTML = "";
     if (!state.tariffs.length) {
-        list.append(linkNode("p", { className: "hint", textContent:
-            "Сменить тариф сейчас не на что. Понижение тарифа может быть выключено, а тарифы, "
-            + "на которые подписка уже есть, не предлагаются." }));
+        list.append(linkNode("p", { className: "hint", textContent: state.subscriptions.length
+            ? "Сменить тариф сейчас не на что. Понижение тарифа может быть выключено, а тарифы, "
+              + "на которые подписка уже есть, не предлагаются."
+            : "Тарифы сейчас недоступны. Попробуйте позже или откройте личный кабинет." }));
         return;
     }
     const box = linkNode("div", { className: "glass-list" });
@@ -832,7 +833,8 @@ $("#openDevices").addEventListener("click", async () => {
             danger: true,
         })),
         (index) => confirmRemoveDevice(devices[index]),
-        limit ? `Занято ${devices.length} из ${limit}` : ""
+        limit ? `Занято ${devices.length} из ${limit}` : "",
+        "Подключённых устройств пока нет."
     );
 });
 
@@ -1027,7 +1029,7 @@ function showEmailForm(card) {
     const email = linkNode("input", { type: "email", placeholder: "Почта", autocomplete: "email" });
     const password = linkNode("input", { type: "password", placeholder: "Новый пароль, от 8 символов" });
     const repeat = linkNode("input", { type: "password", placeholder: "Пароль ещё раз" });
-    const submit = linkNode("button", { className: "small", textContent: "Привязать почту" });
+    const submit = linkNode("button", { className: "primary small", textContent: "Привязать почту" });
     submit.addEventListener("click", async () => {
         const address = email.value.trim();
         const problem = !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address) ? "Проверьте адрес почты"
@@ -1063,7 +1065,7 @@ function showMergeCode(card, address) {
     card.innerHTML = "";
     const note = linkNode("div", { className: "msg hidden" });
     const code = linkNode("input", { type: "text", inputMode: "numeric", maxLength: 6, placeholder: "Код из письма" });
-    const submit = linkNode("button", { className: "small", textContent: "Подтвердить" });
+    const submit = linkNode("button", { className: "primary small", textContent: "Подтвердить" });
     const back = linkNode("button", { className: "ghost small", textContent: "Другая почта" });
     back.addEventListener("click", () => showEmailForm(card));
     submit.addEventListener("click", async () => {

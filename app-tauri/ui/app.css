@@ -1196,3 +1196,42 @@ button.primary .dots i { background: var(--on-accent); }
 #planState .dots, #balanceValue .dots { padding: 6px 0; }
 #balanceValue .dots i { width: 8px; height: 8px; }
 #serverEmpty .loading { margin: 6px auto; }
+
+/* ---------- фокус с клавиатуры ---------- */
+
+/* Своё кольцо вместо системной белой рамки: тонкое, цветом темы. */
+:focus { outline: none; }
+button:focus-visible,
+.toggle:focus-visible,
+input[type="radio"]:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.item:focus-visible { outline-offset: -3px; border-radius: 22px; }
+
+/* длинное название узла — не больше двух строк, как на телефоне */
+.server b {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* выбор при объединении аккаунтов */
+input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    margin: 0;
+    border-radius: 50%;
+    border: 1.5px solid var(--outline);
+    background: var(--wash);
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="radio"]:checked { border-color: var(--accent); box-shadow: inset 0 0 0 4px var(--surface-solid), inset 0 0 0 10px var(--accent); }
+.switch-row .hint { margin: 0; }
+.switch-row b { font-weight: 600; }
+
+/* в коде у радио стоит width:auto — держим круг своим размером */
+input[type="radio"] { width: 20px !important; min-width: 20px; }
