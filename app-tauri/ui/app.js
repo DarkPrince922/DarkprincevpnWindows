@@ -12,6 +12,7 @@ const state = {
     subscriptions: [],
     subIndex: 0,
     pings: [],
+    pinging: false,
     balanceKopeks: null,
     busy: false,
     connected: false,
@@ -1279,7 +1280,7 @@ function renderServer() {
             `<span class="tile flag">${escape(leadingFlag(server.name) || "🌐")}</span>` +
             `<span class="grow"><b>${escape(nameWithoutFlag(server.name))}</b>` +
             (tags ? `<span class="tags ellipsis">${escape(tags)}</span>` : "") + "</span>" +
-            pingChip(state.pings[index]);
+            (state.pinging ? `<span class="ping wait">${DOTS}</span>` : pingChip(state.pings[index]));
         button.addEventListener("click", async () => {
             if (state.busy || index === state.selected) return;
             state.selected = index;
@@ -1306,6 +1307,10 @@ $("#pingButton").addEventListener("click", async () => {
     if (button.classList.contains("working") || !state.servers.length) return;
     button.classList.add("working");
     button.insertAdjacentHTML("afterbegin", DOTS);
+    // Как на Android: пока идёт замер, у каждого узла на месте задержки
+    // бегут точки, а не висит прошлое число.
+    state.pinging = true;
+    renderServer();
     try {
         state.pings = await invoke("ping_servers");
     } catch (error) {
@@ -1313,6 +1318,7 @@ $("#pingButton").addEventListener("click", async () => {
         // и без него, поэтому молчим в интерфейсе, а не пугаем ошибкой.
         console.error(error);
     } finally {
+        state.pinging = false;
         button.classList.remove("working");
         button.querySelector(".dots")?.remove();
         renderServer();
@@ -1578,13 +1584,19 @@ function renderHeadConn() {
     const server = state.servers[state.selected];
     const on = state.connected && !state.busy && Boolean(server);
     node.classList.toggle("hidden", !on);
+    // без подключения — серая капсула; пока подключаемся, капсулы нет совсем
+    $("#headIdle").classList.toggle("hidden", on || state.busy);
     if (!on) return;
     const name = nameWithoutFlag(server.name);
-    const city = name.includes(" · ") ? name.slice(name.indexOf(" · ") + 3) : name;
+    // «Wi-Fi • Нидерланды • Лимбург» → «Лимбург»: в заголовке место узкое,
+    // хватает города. Разделитель в панели бывает и «·», и «•».
+    const city = name.split(/\s+[·•|]\s+/).pop() || name;
     const seconds = Math.max(0, Math.floor((Date.now() - (state.connectedSince || Date.now())) / 1000));
     const pad = (value) => String(value).padStart(2, "0");
     const time = `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
-    node.textContent = `${[leadingFlag(server.name), city].filter(Boolean).join(" ")} · ${time}`;
+    // время — отдельным куском: длинный город обрезается, а часы видны всегда
+    node.innerHTML = `<span class="where">${escape([leadingFlag(server.name), city].filter(Boolean).join(" "))}</span>`
+        + `<span class="time">&nbsp;· ${time}</span>`;
 }
 
 /// Как на Android: «163,6 МБ».

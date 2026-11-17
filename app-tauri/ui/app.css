@@ -1261,3 +1261,60 @@ input[type="radio"] { width: 20px !important; min-width: 20px; }
 .item { padding-left: 18px; padding-right: 18px; }
 .tariff-body { padding-left: 18px; padding-right: 18px; }
 .balance-card { padding: 18px; }
+
+/* замер идёт: точки на месте задержки, ширина как у числа — строки не прыгают */
+.ping.wait { display: inline-flex; justify-content: flex-end; min-width: 52px; animation: none; }
+
+/* заголовок окна: название в одну строку, сервер — обрезается, а не переносится */
+.titlebar .name { white-space: nowrap; flex: none; }
+.titlebar .head-conn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar .head-conn:not(.hidden) { display: flex; }
+.titlebar .head-conn .where { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.titlebar .head-conn .time { flex: none; }
+
+/* ---------- шапка окна: знак и капсула состояния ---------- */
+
+/* Знак залит цветами сайта — бирюза в синий, без подложки. Капсула стоит по
+   центру окна: поля слева и справа под знак и кнопки окна одинаковые. */
+.titlebar {
+    position: relative;
+}
+
+.titlebar .mark {
+    width: auto;
+    height: 22px;
+    border-radius: 0;
+    margin-left: 2px;
+    filter: drop-shadow(0 0 6px rgba(95, 240, 223, 0.45));
+}
+
+.titlebar .head-conn,
+.titlebar .head-idle {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    max-width: calc(100% - 200px);
+    margin: 0 !important;
+    padding: 4px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.titlebar .head-conn {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+}
+
+.titlebar .head-idle {
+    color: var(--muted);
+    background: var(--wash);
+    border: 1px solid var(--outline);
+}
+
+.titlebar .winbtn:first-of-type {
+    margin-left: auto;
+}

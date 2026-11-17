@@ -169,8 +169,23 @@ async fn connect(index: usize, tun: bool, app: TauriState<'_, App>) -> Result<()
         servers.get(index).cloned().ok_or("сервер не выбран")?
     };
     let mode = if tun { Mode::Tun } else { Mode::Proxy };
+    // адреса всех узлов — мимо туннеля, чтобы пинг до них был настоящим
+    let bypass: Vec<String> = app
+        .servers
+        .lock()
+        .unwrap()
+        .iter()
+        .flat_map(|item| std::iter::once(item.address.clone()).chain(item.addresses.iter().cloned()))
+        .filter(|address| !address.is_empty())
+        .collect();
     let vpn = Arc::clone(&app.vpn);
-    match tauri::async_runtime::spawn_blocking(move || vpn.lock().unwrap().connect(&server, mode)).await {
+    match tauri::async_runtime::spawn_blocking(move || {
+        let mut vpn = vpn.lock().unwrap();
+        vpn.set_bypass(bypass);
+        vpn.connect(&server, mode)
+    })
+    .await
+    {
         Ok(result) => result,
         Err(error) => Err(error.to_string()),
     }
