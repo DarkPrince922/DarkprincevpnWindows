@@ -1261,3 +1261,13 @@ input[type="radio"] { width: 20px !important; min-width: 20px; }
 .item { padding-left: 18px; padding-right: 18px; }
 .tariff-body { padding-left: 18px; padding-right: 18px; }
 .balance-card { padding: 18px; }
+
+/* замер идёт: точки на месте задержки, ширина как у числа — строки не прыгают */
+.ping.wait { display: inline-flex; justify-content: flex-end; min-width: 52px; animation: none; }
+
+/* заголовок окна: название в одну строку, сервер — обрезается, а не переносится */
+.titlebar .name { white-space: nowrap; flex: none; }
+.titlebar .head-conn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar .head-conn:not(.hidden) { display: flex; }
+.titlebar .head-conn .where { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.titlebar .head-conn .time { flex: none; }
