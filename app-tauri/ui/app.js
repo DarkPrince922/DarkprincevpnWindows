@@ -64,7 +64,6 @@ document.addEventListener("keydown", (event) => {
     if (!$("#exitAsk").classList.contains("hidden")) closeAsk();
     else if (!$("#guestSheet").classList.contains("hidden")) closeSheet($("#guestSheet"));
     else if (!$("#pickSheet").classList.contains("hidden")) closeSheet($("#pickSheet"));
-    else if (!$("#sheet").classList.contains("hidden")) closeSheet($("#sheet"));
 });
 
 $("#exitHide").addEventListener("click", () => {

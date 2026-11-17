@@ -1159,3 +1159,14 @@ body.in-app::after {
 
 #guestAccessCard { margin: 12px 0 0; }
 #guestAccessCard b { font-size: 15.5px; font-weight: 600; }
+
+/* Окно можно растянуть: лента держит ширину телефона и встаёт по центру,
+   а не расползается на весь экран. */
+#auth, #home { width: 100%; max-width: 520px; margin: 0 auto; }
+.sheet { justify-content: center; }
+.sheet .panel { max-width: 560px; }
+
+/* строка «Выйти»: красным только текст, без заливки кнопки-предупреждения */
+button.item.danger { background: transparent; border: 0; }
+button.item.danger:hover { background: var(--danger-bg); }
+.item.danger .tile .ic { color: var(--danger); }
