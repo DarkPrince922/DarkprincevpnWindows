@@ -43,6 +43,7 @@
         <img src="logo.png" alt="" data-tauri-drag-region>
         <span class="name" data-tauri-drag-region>DarkPrince VPN</span>
         <span class="spacer" data-tauri-drag-region></span>
+        <span class="head-conn hidden" id="headConn" data-tauri-drag-region></span>
         <button class="winbtn" id="minimize" title="Свернуть">
             <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 5.5h11" stroke="currentColor" stroke-width="1.2" /></svg>
         </button>
@@ -95,11 +96,6 @@
 
           <!-- ===== Главная: лента, как на телефоне ===== -->
           <div class="tab active" data-tab="home">
-            <div class="home-head">
-                <span class="brand">DARKPRINCE</span>
-                <span class="head-conn hidden" id="headConn"></span>
-            </div>
-
             <div class="hero">
                 <button class="power" id="power" title="Подключиться">
                     <svg class="ic off" viewBox="0 0 24 24"><use href="#i-power"/></svg><svg class="ic on" viewBox="0 0 24 24"><use href="#i-shield-ok"/></svg>

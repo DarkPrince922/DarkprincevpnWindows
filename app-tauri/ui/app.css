@@ -1170,3 +1170,8 @@ body.in-app::after {
 button.item.danger { background: transparent; border: 0; }
 button.item.danger:hover { background: var(--danger-bg); }
 .item.danger .tile .ic { color: var(--danger); }
+
+/* Название уже стоит в заголовке окна — в ленте его не повторяем. Сервер и
+   время на связи живут там же, справа. */
+.titlebar .head-conn { margin-right: 8px; font-size: 12px; }
+.hero { padding-top: 12px; }
