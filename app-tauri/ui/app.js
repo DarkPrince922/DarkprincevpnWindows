@@ -17,22 +17,11 @@ const state = {
     connected: false,
     guestMode: false,
     usingSharedSubscription: false,
-};
-
-// Состояние карты под кнопкой. Живёт рядом с остальным состоянием, а не у
-// своего цикла отрисовки внизу файла: renderServer трогает его задолго до
-// того, как выполнение доберётся до конца скрипта.
-//
-// Кадры считаем, только когда есть что показывать: пока туннель молчит,
-// картинка неподвижна, и перерисовывать её шестьдесят раз в секунду значит
-// впустую греть процессор — на ноутбуке это заметно по кулеру.
-const map = {
-    canvas: document.querySelector("#map"),
-    glow: 0,      // 0 — огни погашены, 1 — маршрут горит
-    spark: 0,     // положение искры на дуге
-    label: null,  // «🇵🇱 Польша» — считается при выборе сервера
-    dirty: true,
-    last: 0,
+    connectedSince: 0,
+    tariffs: null,        // null — ещё не загружали
+    openTariff: null,     // id раскрытого тарифа
+    periodPick: {},       // выбранный срок: ключ «t<id>» или «s<id>»
+    renewals: {},         // сроки продления по id подписки
 };
 
 const money = (kopeks) =>
@@ -73,7 +62,7 @@ $("#exitAsk").addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!$("#exitAsk").classList.contains("hidden")) closeAsk();
-    else if (!$("#themeSheet").classList.contains("hidden")) closeSheet($("#themeSheet"));
+    else if (!$("#guestSheet").classList.contains("hidden")) closeSheet($("#guestSheet"));
     else if (!$("#pickSheet").classList.contains("hidden")) closeSheet($("#pickSheet"));
     else if (!$("#sheet").classList.contains("hidden")) closeSheet($("#sheet"));
 });
@@ -111,6 +100,14 @@ function closeSheet(sheet) {
     }, 220);
 }
 
+/// Два экрана: вход и само приложение. Нижний остров есть только у второго.
+function showApp(inside) {
+    $("#auth").classList.toggle("hidden", inside);
+    $("#home").classList.toggle("hidden", !inside);
+    document.body.classList.toggle("in-app", inside);
+    if (inside) placePill();
+}
+
 function message(node, text, type = "err") {
     node.className = `msg ${type}`;
     node.textContent = text || "";
@@ -127,7 +124,7 @@ $("#toggleRegister").addEventListener("click", () => {
     $("#emailSubmit").textContent = registerMode ? "Зарегистрироваться" : "Войти";
     $("#toggleRegister").textContent = registerMode
         ? "Уже есть аккаунт? Войти"
-        : "Нет аккаунта? Регистрация";
+        : "Нет аккаунта? Зарегистрируйтесь";
     $("#referralField").classList.toggle("hidden", !registerMode);
     $("#forgot").classList.toggle("hidden", registerMode);
     message($("#authMessage"), "");
@@ -232,7 +229,7 @@ async function activateGuestSubscription(rawLink) {
     const url = GuestAccess.parseSharedSubscription(rawLink);
     if (!url) {
         message(
-            $("#authMessage"),
+            $("#guestMessage"),
             "Ссылка не распознана. Нужна ссылка на подписку по https или QR из "
             + "приложения владельца."
         );
@@ -241,7 +238,7 @@ async function activateGuestSubscription(rawLink) {
 
     const controls = [$("#guestSubmit"), $("#guestQrButton")];
     controls.forEach((button) => (button.disabled = true));
-    message($("#authMessage"), "Проверяю подписку…", "info");
+    message($("#guestMessage"), "Проверяю подписку…", "info");
     try {
         const { servers } = await fetchServers(url);
         store.guestSubscription = url;
@@ -251,8 +248,10 @@ async function activateGuestSubscription(rawLink) {
         state.subscriptions = [];
         state.subIndex = 0;
 
-        $("#auth").classList.add("hidden");
-        $("#home").classList.remove("hidden");
+        message($("#guestMessage"), "");
+        closeSheet($("#guestSheet"));
+        showApp(true);
+        goTab("home");
         renderMode();
         renderAccessMode();
         renderSubscription();
@@ -260,7 +259,7 @@ async function activateGuestSubscription(rawLink) {
         applyServers(servers);
         message($("#homeMessage"), "Гостевая подписка подключена.", "info");
     } catch (error) {
-        message($("#authMessage"), `Не удалось загрузить подписку: ${String(error)}`);
+        message($("#guestMessage"), `Не удалось загрузить подписку: ${String(error)}`);
     } finally {
         controls.forEach((button) => (button.disabled = false));
     }
@@ -268,7 +267,7 @@ async function activateGuestSubscription(rawLink) {
 
 $("#guestForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    message($("#authMessage"), "");
+    message($("#guestMessage"), "");
     await activateGuestSubscription($("#guestLink").value);
 });
 
@@ -283,16 +282,26 @@ $("#guestQrFile").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     $("#guestQrButton").disabled = true;
-    message($("#authMessage"), "Читаю QR-код…", "info");
+    message($("#guestMessage"), "Читаю QR-код…", "info");
     try {
         const rawLink = await GuestAccess.decodeQrFile(file);
         $("#guestLink").value = rawLink;
         await activateGuestSubscription(rawLink);
     } catch (error) {
-        message($("#authMessage"), error.message || String(error));
+        message($("#guestMessage"), error.message || String(error));
     } finally {
         $("#guestQrButton").disabled = false;
     }
+});
+
+$("#guestOpen").addEventListener("click", () => {
+    message($("#guestMessage"), "");
+    $("#guestSheet").classList.remove("hidden");
+    $("#guestLink").focus();
+});
+
+$("#guestSheet").addEventListener("click", (event) => {
+    if (event.target === $("#guestSheet")) closeSheet($("#guestSheet"));
 });
 
 $("#logout").addEventListener("click", async () => {
@@ -310,12 +319,12 @@ $("#logout").addEventListener("click", async () => {
 // ================= подписка и серверы =================
 
 async function enter() {
-    $("#auth").classList.add("hidden");
-    $("#home").classList.remove("hidden");
+    showApp(true);
     state.guestMode = !store.loggedIn && Boolean(store.guestSubscription);
     state.usingSharedSubscription = state.guestMode;
     renderMode();
     renderAccessMode();
+    goTab("home");
     await loadSubscription();
 }
 
@@ -401,7 +410,7 @@ async function loadSubscription() {
             $("#homeMessage"),
             accountError?.message || "Подписки нет. Оформите тариф в личном кабинете."
         );
-        $("#serverName").textContent = "Нет подписки";
+        serverEmpty("Подписки нет");
         return;
     }
 
@@ -432,9 +441,12 @@ function renderAccessMode() {
     $$(".account-only").forEach((node) =>
         node.classList.toggle("hidden", state.guestMode)
     );
-    $("#logout").textContent = state.guestMode
+    $("#logout b").textContent = state.guestMode
         ? "Отключить гостевой доступ"
         : "Выйти из аккаунта";
+    // гостю тарифы и баланс недоступны: если он стоял на них — уводим домой
+    if (state.guestMode && ["plans", "balance"].includes(document.body.dataset.tab)) goTab("home");
+    placePill();
 
     const shared = state.guestMode || state.usingSharedSubscription;
     $("#guestAccessCard").classList.toggle("hidden", !shared);
@@ -446,24 +458,23 @@ function renderAccessMode() {
 
 $("#guestAccountLogin").addEventListener("click", async () => {
     if (state.connected) await disconnectNow();
-    $("#home").classList.add("hidden");
-    $("#auth").classList.remove("hidden");
+    showApp(false);
     message($("#authMessage"), "Гостевая подписка сохранена. Войдите в свой аккаунт.", "info");
 });
 
 // ================= несколько подписок =================
 
 function renderSubSwitcher() {
-    const many = state.subscriptions.length > 1;
-    $("#subSwitcher").classList.toggle("hidden", !many);
-    if (!many) return;
-
-    const sub = state.subscription;
-    $("#subPickName").textContent = sub ? subTitle(sub) : "—";
-    $("#subPickHint").textContent = `подписок: ${state.subscriptions.length} · нажмите, чтобы переключить`;
+    $("#subMany").classList.toggle("hidden", state.subscriptions.length < 2);
 }
 
-$("#subPick").addEventListener("click", () => {
+// Как на Android: подписок несколько — карточка открывает выбор, одна —
+// ведёт в «Тарифы».
+$("#subscriptionCard").addEventListener("click", () => {
+    if (state.subscriptions.length < 2) {
+        if (!state.guestMode) goTab("plans");
+        return;
+    }
     openPicker(
         "Ваши подписки",
         state.subscriptions.map((sub, index) => ({
@@ -473,15 +484,17 @@ $("#subPick").addEventListener("click", () => {
                 : "неактивна",
             selected: index === state.subIndex,
         })),
-        async (index) => {
-            if (index === state.subIndex) return;
-            state.subIndex = index;
-            // серверы принадлежат подписке: переключились — перечитываем
-            if (state.connected) await disconnectNow();
-            await loadSubscription();
-        }
+        (index) => switchSubscription(index)
     );
 });
+
+async function switchSubscription(index) {
+    if (index === state.subIndex) return;
+    state.subIndex = index;
+    // серверы принадлежат подписке: переключились — перечитываем
+    if (state.connected) await disconnectNow();
+    await loadSubscription();
+}
 
 // ================= общий выбор =================
 
@@ -493,12 +506,12 @@ function openPicker(title, items, onPick, note) {
 
     items.forEach((item, index) => {
         const button = document.createElement("button");
-        button.className = "server";
+        button.className = "option";
         button.setAttribute("aria-selected", String(Boolean(item.selected)));
         button.innerHTML =
-            `<span class="grow"><span class="ellipsis" style="display:block">${escape(item.title)}</span>` +
-            `<span class="tiny muted">${escape(item.subtitle || "")}</span></span>` +
-            (item.right ? `<span class="gold">${escape(item.right)}</span>` : "");
+            `<span class="grow"><b class="ellipsis">${escape(item.title)}</b>` +
+            `<span>${escape(item.subtitle || "")}</span></span>` +
+            (item.right ? `<span class="price${item.danger ? " danger" : ""}">${escape(item.right)}</span>` : "");
         button.addEventListener("click", async () => {
             closeSheet($("#pickSheet"));
             await onPick(index);
@@ -508,8 +521,7 @@ function openPicker(title, items, onPick, note) {
 
     if (!items.length) {
         const empty = document.createElement("p");
-        empty.className = "tiny muted";
-        empty.style.padding = "4px 4px 10px";
+        empty.className = "hint";
         empty.textContent = "Вариантов нет.";
         list.append(empty);
     }
@@ -540,41 +552,12 @@ $("#topup").addEventListener("click", () =>
     invoke("open_url", { url: "https://dprince.online/cabinet.html#balance" })
 );
 
-$("#openTariffs").addEventListener("click", async () => {
-    let options;
-    try {
-        options = await api.purchaseOptions();
-    } catch (error) {
-        message($("#homeMessage"), error.message);
-        return;
-    }
-    const tariffs = options.tariffs || options.items || [];
-    if (!tariffs.length) {
-        message(
-            $("#homeMessage"),
-            "Сменить тариф сейчас не на что. Возможны ограничения: понижение тарифа может быть "
-            + "выключено, а тарифы, на которые подписка уже есть, не предлагаются."
-        );
-        return;
-    }
-
-    openPicker(
-        "Выберите тариф",
-        tariffs.map((tariff) => ({
-            title: tariff.name || `Тариф №${tariff.id}`,
-            subtitle: tariffHint(tariff),
-        })),
-        (index) => pickPeriod(tariffs[index]),
-        state.balanceKopeks === null ? "" : `На балансе ${money(state.balanceKopeks)}`
-    );
-});
-
 function tariffHint(tariff) {
     const parts = [];
     const traffic = tariff.traffic_limit_gb;
-    if (traffic === 0 || traffic === null) parts.push("трафик без ограничений");
+    if (traffic === 0 || traffic === null) parts.push("Безлимитный трафик");
     else if (traffic) parts.push(`${traffic} ГБ`);
-    if (tariff.device_limit) parts.push(`${tariff.device_limit} устр.`);
+    if (tariff.device_limit) parts.push(`до ${tariff.device_limit} устройств`);
     return parts.join(" · ");
 }
 
@@ -582,10 +565,8 @@ function tariffHint(tariff) {
 ///
 /// Сервер присылает их списком объектов: у тарифа — в поле `periods`
 /// ([{days, price_kopeks}]), у продления — прямо в корне ответа
-/// ([{period_days, price_kopeks}]). Раньше здесь ждали словарь вида
-/// {"14": 12000}, и вместо сроков выходило «1 день · NaN ₽», а продление
-/// отвечало «продлевать нечего». Словарь по-прежнему понимаем — на случай
-/// самодельного кабинета.
+/// ([{period_days, price_kopeks}]). Словарь вида {"14": 12000} по-прежнему
+/// понимаем — на случай самодельного кабинета.
 function periodsOf(source) {
     const raw = Array.isArray(source)
         ? source
@@ -600,8 +581,7 @@ function periodsOf(source) {
         Number.isFinite(period.days) && period.days > 0 && Number.isFinite(period.price));
 
     // У суточного тарифа сроков нет вовсе: цена за день, а срок в один день
-    // сервер при покупке ставит сам. Без этого такой тариф в списке был, а
-    // купить его было нельзя.
+    // сервер при покупке ставит сам.
     if (!periods.length && source.is_daily && source.daily_price_kopeks) {
         periods.push({ days: 1, price: Number(source.daily_price_kopeks), daily: true });
     }
@@ -609,61 +589,173 @@ function periodsOf(source) {
 }
 
 const periodTitle = (period) => period.daily
-    ? "Посуточно · списывается каждый день"
+    ? "Посуточно"
     : `${period.days} ${plural(period.days, "день", "дня", "дней")}`;
 
-async function pickPeriod(tariff) {
-    const periods = periodsOf(tariff);
-    if (!periods.length) {
-        message($("#homeMessage"), `У тарифа «${tariff.name}» не задано ни одного срока.`);
-        return;
-    }
-    openPicker(
-        `Срок · ${tariff.name}`,
-        periods.map((period) => ({
-            title: periodTitle(period),
-            subtitle: state.balanceKopeks !== null && period.price > state.balanceKopeks
-                ? "не хватает на балансе"
-                : "спишется с баланса",
-            right: money(period.price),
-        })),
-        async (index) => {
-            const period = periods[index];
-            await buy(() => api.purchaseTariff(tariff.id, period.days), "Тариф изменён.");
-        },
-        state.balanceKopeks === null ? "" : `На балансе ${money(state.balanceKopeks)}`
-    );
+/// Капсула загрузки — та же, что на Android: три бегущие точки и подпись.
+const loadingCapsule = (text) =>
+    `<div class="loading"><span class="dots"><i></i><i></i><i></i></span>${escape(text)}</div>`;
+
+/// Чипы сроков и кнопка с ценой. Общие для продления и покупки: разница
+/// только в подписи кнопки и в том, какой запрос уйдёт.
+function periodPicker(key, periods, verb, onPay) {
+    const box = linkNode("div", { className: "periods" });
+    if (!(state.periodPick[key] < periods.length)) state.periodPick[key] = 0;
+    const chips = linkNode("div", { className: "chips" });
+    const pay = linkNode("button", { className: "primary block needs-cabinet" });
+    const note = linkNode("p", { className: "hint" });
+    const paint = () => {
+        const period = periods[state.periodPick[key]];
+        [...chips.children].forEach((chip, index) =>
+            chip.setAttribute("aria-selected", String(index === state.periodPick[key])));
+        const short = state.balanceKopeks !== null && period.price > state.balanceKopeks;
+        pay.textContent = short ? "Пополнить баланс" : `${verb} за ${money(period.price)}`;
+        note.textContent = short
+            ? `Нужно ${money(period.price)}, на балансе ${money(state.balanceKopeks)}`
+            : period.daily ? "Списывается с баланса каждый день" : "Спишется с баланса";
+        pay.onclick = () => (short ? goTab("balance") : onPay(period));
+    };
+    periods.forEach((period, index) => {
+        const chip = linkNode("button", { className: "chip-btn", textContent: periodTitle(period) });
+        chip.addEventListener("click", () => {
+            state.periodPick[key] = index;
+            paint();
+        });
+        chips.append(chip);
+    });
+    paint();
+    pay.disabled = serviceHealth.down === true;
+    box.append(chips, pay, note);
+    return box;
 }
 
-$("#renewButton").addEventListener("click", async () => {
-    let options;
+/// «Ваши подписки»: по карточке на каждую, с продлением прямо в ней.
+function renderPlans() {
+    const list = $("#subsList");
+    list.innerHTML = "";
+    if (!state.subscriptions.length) {
+        list.append(linkNode("p", { className: "hint", textContent: "Подписки пока нет — выберите тариф ниже." }));
+    }
+    state.subscriptions.forEach((sub, index) => {
+        const days = sub.days_left ?? daysUntil(sub.end_date);
+        const [label, tone] = !isActive(sub) ? ["Не активна", "bad"]
+            : days === null ? ["Активна", "ok"]
+            : days <= 0 ? ["Последний день", "warn"]
+            : [`${days} ${plural(days, "день", "дня", "дней")}`, days <= 7 ? "warn" : "ok"];
+        const card = linkNode("div", { className: "card plan-card" });
+        card.innerHTML =
+            `<div class="plan-top"><span class="grow"><b class="ellipsis">${escape(subTitle(sub))}</b>` +
+            `<span>${escape(sub.end_date ? `до ${dateShort(sub.end_date)}` : "Срок неизвестен")}</span></span>` +
+            `<span class="chip ${tone}">${escape(label)}</span></div>` +
+            `<div class="plan-facts">${escape(subFacts(sub))}</div>`;
+
+        if (state.subscriptions.length > 1) {
+            if (index === state.subIndex) {
+                card.append(linkNode("p", { className: "hint current", textContent: "Подключение идёт по этой подписке" }));
+            } else {
+                const use = linkNode("button", { className: "small", textContent: "Подключаться по этой" });
+                use.addEventListener("click", () => switchSubscription(index));
+                card.append(use);
+            }
+        }
+
+        const slot = linkNode("div", { className: "renew" });
+        card.append(slot);
+        list.append(card);
+        fillRenewal(slot, sub);
+    });
+    renderTariffs();
+}
+
+function subFacts(sub) {
+    const used = Number(sub.traffic_used_gb ?? 0);
+    const limit = sub.traffic_limit_gb;
+    const unlimited = limit === null || limit === undefined || Number(limit) === 0;
+    const parts = [unlimited ? "Безлимитный трафик" : `${used.toFixed(1)} из ${Number(limit).toFixed(0)} ГБ`];
+    if (sub.device_limit) parts.push(`до ${sub.device_limit} устройств`);
+    return parts.join(" · ");
+}
+
+const dateShort = (raw) => {
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? String(raw) : date.toLocaleDateString("ru-RU");
+};
+
+async function fillRenewal(slot, sub) {
+    const key = `s${sub.id}`;
+    if (!state.renewals[key]) {
+        slot.innerHTML = loadingCapsule("Загружаем сроки");
+        try {
+            state.renewals[key] = periodsOf(await api.renewalOptions(sub.id));
+        } catch {
+            slot.innerHTML = "";
+            return; // кабинет не ответил: о нём скажет полоса наверху
+        }
+    }
+    const periods = state.renewals[key];
+    slot.innerHTML = "";
+    if (!periods.length) return;
+    slot.append(periodPicker(key, periods, "Продлить", (period) =>
+        buy(() => api.renew(period.days, sub.id), "Подписка продлена.")));
+}
+
+/// «Выберите тариф»: список раскрывается на месте, как на телефоне.
+async function loadTariffs(force) {
+    if (state.guestMode) return;
+    if (state.tariffs && !force) return renderTariffs();
+    if (!state.tariffs) $("#tariffList").innerHTML = loadingCapsule("Загружаем тарифы");
     try {
-        options = await api.renewalOptions(state.subscription?.id);
+        const options = await api.purchaseOptions();
+        state.tariffs = options.tariffs || options.items || [];
     } catch (error) {
-        message($("#homeMessage"), error.message);
+        if (!state.tariffs) $("#tariffList").innerHTML = "";
+        message($("#plansMessage"), error.message);
         return;
     }
-    const periods = periodsOf(options);
-    if (!periods.length) {
-        message($("#homeMessage"), "Продлевать нечего: сроков для текущего тарифа не предлагается.");
+    renderTariffs();
+}
+
+function renderTariffs() {
+    const list = $("#tariffList");
+    if (!state.tariffs) return;
+    list.innerHTML = "";
+    if (!state.tariffs.length) {
+        list.append(linkNode("p", { className: "hint", textContent:
+            "Сменить тариф сейчас не на что. Понижение тарифа может быть выключено, а тарифы, "
+            + "на которые подписка уже есть, не предлагаются." }));
         return;
     }
-    openPicker(
-        "На сколько продлить",
-        periods.map((period) => ({
-            title: periodTitle(period),
-            subtitle: state.balanceKopeks !== null && period.price > state.balanceKopeks
-                ? "не хватает на балансе"
-                : "спишется с баланса",
-            right: money(period.price),
-        })),
-        async (index) => {
-            const sid = state.subscription?.id;
-            await buy(() => api.renew(periods[index].days, sid), "Подписка продлена.");
-        },
-        state.balanceKopeks === null ? "" : `На балансе ${money(state.balanceKopeks)}`
-    );
-});
+    const box = linkNode("div", { className: "glass-list" });
+    for (const tariff of state.tariffs) {
+        const periods = periodsOf(tariff);
+        const open = state.openTariff === tariff.id;
+        const from = periods.length ? Math.min(...periods.map((period) => period.price)) : null;
+        const row = linkNode("button", { className: "item tariff" });
+        row.setAttribute("aria-expanded", String(open));
+        row.innerHTML =
+            `<span class="grow"><b>${escape(tariff.name || `Тариф №${tariff.id}`)}</b>` +
+            `<span>${escape(tariffHint(tariff))}</span></span>` +
+            (from === null ? "" : `<span class="price">${periods.length > 1 ? "от " : ""}${escape(money(from))}${periods[0].daily ? " / день" : ""}</span>`) +
+            '<svg class="ic chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg>';
+        row.addEventListener("click", () => {
+            state.openTariff = open ? null : tariff.id;
+            renderTariffs();
+        });
+        box.append(row);
+        if (open) {
+            const body = linkNode("div", { className: "tariff-body" });
+            if (tariff.description) body.append(linkNode("p", { className: "hint", textContent: tariff.description }));
+            if (periods.length) {
+                body.append(periodPicker(`t${tariff.id}`, periods, "Оформить", (period) =>
+                    buy(() => api.purchaseTariff(tariff.id, period.days), "Тариф оформлен.")));
+            } else {
+                body.append(linkNode("p", { className: "hint", textContent: "У тарифа не задано ни одного срока." }));
+            }
+            box.append(body);
+        }
+    }
+    list.append(box);
+}
 
 // ================= устройства, промокоды, рефералы =================
 
@@ -672,7 +764,7 @@ $("#openDevices").addEventListener("click", async () => {
     try {
         data = await api.devices(state.subscription?.id);
     } catch (error) {
-        message($("#homeMessage"), error.message);
+        message($("#moreMessage"), error.message);
         return;
     }
     const devices = data.devices || data.items || [];
@@ -683,7 +775,9 @@ $("#openDevices").addEventListener("click", async () => {
         devices.map((device) => ({
             title: device.device_model || device.name || device.hwid || "Устройство",
             subtitle: [device.platform || device.device_os, device.last_seen_at || device.updated_at]
-                .filter(Boolean).join(" · ") || "нажмите, чтобы отключить",
+                .filter(Boolean).join(" · "),
+            right: "Отключить",
+            danger: true,
         })),
         (index) => confirmRemoveDevice(devices[index]),
         limit ? `Занято ${devices.length} из ${limit}` : ""
@@ -696,7 +790,7 @@ function confirmRemoveDevice(device) {
     const hwid = device.hwid || device.id;
     const name = device.device_model || device.name || "устройство";
     if (!hwid) {
-        message($("#homeMessage"), "У этого устройства нет опознавателя — отключить его можно только в кабинете.");
+        message($("#moreMessage"), "У этого устройства нет опознавателя — отключить его можно только в кабинете.");
         return;
     }
     openPicker(
@@ -707,13 +801,13 @@ function confirmRemoveDevice(device) {
         ],
         async (index) => {
             if (index !== 0) return;
-            message($("#homeMessage"), "Отключаю…", "info");
+            message($("#moreMessage"), "Отключаю…", "info");
             try {
                 await api.removeDevice(hwid, state.subscription?.id);
                 await loadSubscription();
-                message($("#homeMessage"), `Устройство «${name}» отключено.`, "info");
+                message($("#moreMessage"), `Устройство «${name}» отключено.`, "info");
             } catch (error) {
-                message($("#homeMessage"), error.message);
+                message($("#moreMessage"), error.message);
             }
         }
     );
@@ -724,14 +818,14 @@ $("#promoForm").addEventListener("submit", async (event) => {
     const code = $("#promoCode").value.trim();
     if (!code) return;
     $("#promoSubmit").disabled = true;
-    message($("#homeMessage"), "Проверяю промокод…", "info");
+    message($("#balanceMessage"), "Проверяю промокод…", "info");
     try {
         const result = await api.activatePromo(code);
         $("#promoCode").value = "";
         await loadSubscription();
-        message($("#homeMessage"), result.message || "Промокод применён.", "info");
+        message($("#balanceMessage"), result.message || "Промокод применён.", "info");
     } catch (error) {
-        message($("#homeMessage"), error.message);
+        message($("#balanceMessage"), error.message);
     } finally {
         $("#promoSubmit").disabled = false;
     }
@@ -742,7 +836,7 @@ $("#openReferral").addEventListener("click", async () => {
     try {
         data = await api.referral();
     } catch (error) {
-        message($("#homeMessage"), error.message);
+        message($("#moreMessage"), error.message);
         return;
     }
     const link = data.referral_link || data.link || "";
@@ -763,15 +857,17 @@ $("#openReferral").addEventListener("click", async () => {
 /// состояние. Ошибку показываем как есть — в ней написана причина отказа,
 /// чаще всего нехватка денег.
 async function buy(action, successText) {
-    message($("#homeMessage"), "Отправляю…", "info");
+    message($("#plansMessage"), "Отправляю…", "info");
     try {
         await action();
         // Порядок важен: loadSubscription чистит сообщения, поэтому итог
         // пишется после неё, иначе он гаснет сразу же после появления.
+        state.renewals = {};
         await loadSubscription();
-        message($("#homeMessage"), successText, "info");
+        loadTariffs(true);
+        message($("#plansMessage"), successText, "info");
     } catch (error) {
-        message($("#homeMessage"), error.message);
+        message($("#plansMessage"), error.message);
     }
 }
 
@@ -797,7 +893,7 @@ async function loadServers(url) {
         if (result.cached) serviceHealth.set(true);
         return true;
     } catch (error) {
-        $("#serverName").textContent = "Серверы не загрузились";
+        serverEmpty("Серверы не загрузились");
         message($("#homeMessage"), String(error));
         return false;
     }
@@ -837,12 +933,23 @@ async function loadAccount() {
     try {
         const user = await api.me();
         // почта уже есть — привязывать нечего
-        card.classList.toggle("hidden", Boolean(user?.email));
-        if (!user?.email) showEmailForm(card);
+        // Как на Android: строка «Привязать почту», форма — по нажатию.
+        $("#emailLinkOpen").classList.toggle("hidden", Boolean(user?.email));
+        if (user?.email) card.classList.add("hidden");
     } catch {
+        $("#emailLinkOpen").classList.add("hidden");
         card.classList.add("hidden");
     }
 }
+
+$("#emailLinkOpen").addEventListener("click", () => {
+    const card = $("#emailLinkCard");
+    const opening = card.classList.contains("hidden");
+    if (opening && !card.dataset.done) showEmailForm(card);
+    card.classList.toggle("hidden", !opening);
+    $("#emailLinkOpen").setAttribute("aria-expanded", String(opening));
+    if (opening) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+});
 
 function linkNode(tag, props = {}, children = []) {
     const node = Object.assign(document.createElement(tag), props);
@@ -971,6 +1078,7 @@ function showMergeChoice(card, token, preview) {
 
 function showLinkDone(card, text) {
     card.dataset.done = "1";
+    $("#emailLinkOpen").classList.add("hidden");
     card.innerHTML = "";
     card.append(linkNode("p", { className: "hint", textContent: text }));
 }
@@ -995,7 +1103,7 @@ function readSavedSubscriptions() {
 
 // Кнопки, которым нужен кабинет. Пока он лежит, их гасим заранее — нажать
 // и получить ошибку хуже, чем видеть, что сейчас это недоступно.
-const CABINET_BUTTONS = ["#topup", "#openTariffs", "#renewButton", "#openDevices", "#promoSubmit"];
+const CABINET_BUTTONS = ["#topup", "#openDevices", "#promoSubmit", ".needs-cabinet"];
 
 // Три разные надписи: лежим мы, у человека нет сети или оператор включил
 // белые списки. Подписка сохранена во всех трёх случаях.
@@ -1015,12 +1123,9 @@ function renderServiceState(down, status = serviceHealth.status) {
     const [title, text] = SERVICE_TEXTS[status] || SERVICE_TEXTS.down;
     banner.innerHTML = "";
     banner.append(Object.assign(document.createElement("b"), { textContent: title }), " " + text);
-    for (const selector of CABINET_BUTTONS) {
-        const button = $(selector);
-        if (button) {
-            button.disabled = down;
-            button.title = down ? "Станет доступно, когда сервис вернётся" : "";
-        }
+    for (const button of $$(CABINET_BUTTONS.join(","))) {
+        button.disabled = down;
+        button.title = down ? "Станет доступно, когда сервис вернётся" : "";
     }
     // ошибка запроса при лежащем кабинете — та же новость, что в полосе
     if (down && $("#homeMessage").classList.contains("err")) message($("#homeMessage"), "");
@@ -1041,151 +1146,101 @@ function applyServers(servers) {
 
 function renderSubscription() {
     const sub = state.subscription;
+    const chip = $("#days");
+    const row = $("#trafficRow");
+    chip.classList.add("hidden");
+    row.classList.add("hidden");
+    renderPlans();
+
     if (state.usingSharedSubscription) {
         $("#planName").textContent = "Гостевая подписка";
         $("#planState").textContent = "Активна по ссылке владельца";
-        $("#days").textContent = "—";
-        $("#daysWord").textContent = "";
-        $("#traffic").textContent = "Данные доступны владельцу";
-        $("#trafficBar").classList.add("hidden");
-        $("#devices").textContent = "—";
         return;
     }
     if (!sub) {
         $("#planName").textContent = "Подписки нет";
-        $("#planState").textContent = "";
-        $("#days").textContent = "—";
-        $("#daysWord").textContent = "";
-        $("#traffic").textContent = "—";
-        $("#trafficBar").classList.add("hidden");
-        $("#devices").textContent = "—";
+        $("#planState").textContent = state.guestMode ? "" : "Нажмите, чтобы выбрать тариф";
         return;
     }
     $("#planName").textContent = sub.tariff_name || (sub.is_trial ? "Пробная подписка" : "Подписка");
-    $("#planState").textContent = isActive(sub) ? "Активна" : "Неактивна";
+    $("#planState").textContent = sub.end_date ? `до ${dateShort(sub.end_date)}` : "Срок неизвестен";
 
+    // остаток — меткой: бирюзовая, на исходе (до недели) жёлтая, истекла — красная
     const days = sub.days_left ?? daysUntil(sub.end_date);
-    $("#days").textContent = days === null ? "—" : String(days);
-    $("#daysWord").textContent = days === null ? "" : `${plural(days, "день", "дня", "дней")} осталось`;
+    if (days !== null) {
+        const expired = days <= 0 && !isActive(sub);
+        chip.textContent = expired ? "Истекла" : `${days} ${plural(days, "день", "дня", "дней")}`;
+        chip.className = `chip ${expired ? "bad" : days <= 7 ? "warn" : "ok"}`;
+    }
 
     const used = Number(sub.traffic_used_gb ?? 0);
-    const limit = sub.traffic_limit_gb;
-    const unlimited = limit === null || limit === undefined || Number(limit) === 0;
-    $("#traffic").textContent = unlimited
-        ? `${used.toFixed(1)} ГБ · безлимит`
-        : `${used.toFixed(1)} из ${Number(limit).toFixed(0)} ГБ`;
-    const share = unlimited ? 0 : Math.min(1, used / Number(limit));
-    $("#trafficBar").classList.toggle("hidden", unlimited);
-    $("#trafficBar").firstElementChild.style.width = `${Math.round(share * 100)}%`;
-    $("#devices").textContent = sub.device_limit ?? "—";
-}
-
-function renderServer() {
-    const server = state.servers[state.selected];
-    $("#serverName").textContent = server ? server.name : "Сервер не выбран";
-
-    // Описание задаётся в панели каждому узлу отдельно и есть далеко не у
-    // всех: пустую строку прячем целиком, иначе под названием повиснет
-    // пустое место.
-    const description = $("#serverDesc");
-    description.textContent = server && server.description ? server.description : "";
-    description.style.display = description.textContent ? "block" : "none";
-
-    $("#serverTransport").innerHTML = badges(server && server.transport);
-
-    map.label = server ? DPMap.countryLabel(DPMap.countryOf(server.name)) : null;
-    map.dirty = true;
-}
-
-/**
- * Раскраска значков транспорта.
- *
- * Один цвет на семейство, а не на каждое слово: reality и tls — про то, чем
- * прикрыт трафик, grpc и xhttp — про то, как он упакован, и разводить их по
- * оттенкам полезнее, чем красить каждое слово во что попало.
- */
-function badgeKind(token) {
-    switch (token.toLowerCase()) {
-        case "vless": case "vmess": case "trojan":
-        case "shadowsocks": case "ss":
-            return "proto";
-        case "hysteria": case "hysteria2": case "tuic": case "wireguard":
-            return "fast";
-        case "reality":
-            return "reality";
-        case "tls": case "xtls":
-            return "tls";
-        case "grpc":
-            return "grpc";
-        case "xhttp": case "splithttp":
-            return "xhttp";
-        case "ws": case "websocket": case "httpupgrade":
-            return "ws";
-        default:
-            return "tcp";
+    const limit = Number(sub.traffic_limit_gb ?? 0);
+    if (limit > 0) {
+        row.classList.remove("hidden");
+        $("#traffic").textContent = `${used.toFixed(1)} / ${limit.toFixed(0)} ГБ`;
+        $("#trafficBar").firstElementChild.style.width = `${Math.round(Math.min(1, used / limit) * 100)}%`;
     }
 }
 
-/** Значки транспорта одной строкой. Пустой список даёт пустую строку. */
-function badges(parts) {
-    if (!Array.isArray(parts)) return "";
-    return parts
-        .map((part) => `<span class="badge" data-kind="${badgeKind(part)}">${escape(part)}</span>`)
-        .join("");
+/// Пусто в списке серверов — говорим почему, одной строкой на его месте.
+function serverEmpty(text) {
+    $("#serverEmpty").textContent = text;
+    renderServer();
+}
+
+/// Флаг в начале названия: «🇩🇪 Германия · Франкфурт» → «🇩🇪».
+function leadingFlag(name) {
+    const match = String(name || "").trim()
+        .match(/^(?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic}\uFE0F?)/u);
+    return match ? match[0] : null;
+}
+
+/// Серверы прямо на главной: стеклянное окно со строками, как на телефоне.
+function renderServer() {
+    const list = $("#serverList");
+    const has = state.servers.length > 0;
+    $("#serversTitle").textContent = has ? `СЕРВЕРЫ · ${state.servers.length}` : "СЕРВЕРЫ";
+    $("#serverEmpty").classList.toggle("hidden", has);
+    list.classList.toggle("hidden", !has);
+    list.innerHTML = "";
+
+    state.servers.forEach((server, index) => {
+        const button = document.createElement("button");
+        button.className = "item server";
+        button.setAttribute("aria-selected", String(index === state.selected));
+        // подпись узла из панели, если её задали, иначе — метки транспорта
+        const tags = server.description
+            || (Array.isArray(server.transport) ? server.transport.join(" · ").toUpperCase() : "");
+        button.innerHTML =
+            `<span class="tile flag">${escape(leadingFlag(server.name) || "🌐")}</span>` +
+            `<span class="grow"><b>${escape(nameWithoutFlag(server.name))}</b>` +
+            (tags ? `<span class="tags ellipsis">${escape(tags)}</span>` : "") + "</span>" +
+            pingChip(state.pings[index]);
+        button.addEventListener("click", async () => {
+            if (state.busy || index === state.selected) return;
+            state.selected = index;
+            localStorage.setItem("dp_server", String(index));
+            renderServer();
+            if (state.connected) await connect(); // на лету переключаемся на выбранный узел
+        });
+        list.append(button);
+    });
+    renderHeadConn();
 }
 
 // Пороги те же, что в приложении на Android: список серверов должен
 // читаться одинаково, с какого бы устройства человек ни смотрел.
 function pingChip(millis) {
-    if (millis === undefined) return "";
-    const grade =
-        millis < 0 ? "dead" : millis < 300 ? "good" : millis < 700 ? "fair" : "poor";
-    const label = millis < 0 ? "нет" : `${millis} мс`;
-    return (
-        `<span class="ping ${grade}">` +
-        "<span class=\"bars\"><i></i><i></i><i></i></span>" +
-        `<span>${label}</span></span>`
-    );
-}
-
-$("#serverPick").addEventListener("click", () => {
-    $("#serverList").classList.remove("settled");
-    renderServerList();
-    $("#sheet").classList.remove("hidden");
-});
-
-function renderServerList() {
-    const list = $("#serverList");
-    // список уже на экране — строки не должны появляться заново
-    list.classList.toggle("settled", !$("#sheet").classList.contains("hidden"));
-    list.innerHTML = "";
-    state.servers.forEach((server, index) => {
-        const button = document.createElement("button");
-        button.className = "server";
-        button.setAttribute("aria-selected", String(index === state.selected));
-        button.innerHTML =
-            `<span class="grow"><span class="ellipsis" style="display:block">${escape(server.name)}</span>` +
-            (server.description
-                ? `<span class="tiny muted ellipsis">${escape(server.description)}</span>`
-                : "") +
-            `<span class="badges">${badges(server.transport)}</span></span>` +
-            pingChip(state.pings[index]);
-        button.addEventListener("click", async () => {
-            state.selected = index;
-            localStorage.setItem("dp_server", String(index));
-            renderServer();
-            closeSheet($("#sheet"));
-            if (state.connected) await connect(); // на лету переключаемся на выбранный узел
-        });
-        list.append(button);
-    });
+    if (millis === undefined || millis === null) return "";
+    if (millis < 0) return '<span class="ping dead">нет</span>';
+    const grade = millis < 300 ? "good" : millis < 700 ? "fair" : "poor";
+    return `<span class="ping ${grade}">${millis}<small>мс</small></span>`;
 }
 
 $("#pingButton").addEventListener("click", async () => {
     const button = $("#pingButton");
-    if (button.disabled) return;
-    button.disabled = true;
-    button.textContent = "Проверяю…";
+    if (button.classList.contains("working") || !state.servers.length) return;
+    button.classList.add("working");
     try {
         state.pings = await invoke("ping_servers");
     } catch (error) {
@@ -1193,17 +1248,66 @@ $("#pingButton").addEventListener("click", async () => {
         // и без него, поэтому молчим в интерфейсе, а не пугаем ошибкой.
         console.error(error);
     } finally {
-        button.disabled = false;
-        button.textContent = "Проверить пинг";
-        renderServerList();
+        button.classList.remove("working");
+        renderServer();
     }
 });
 
-$("#sheet").addEventListener("click", (event) => {
-    if (event.target === $("#sheet")) closeSheet($("#sheet"));
-});
+// «Обновить»: заново тянем подписку и список; пока идёт — значок крутится
+async function refreshAll(button) {
+    if (button.classList.contains("working")) return;
+    button.classList.add("working");
+    // Ответ бывает мгновенным, и без паузы нажатие выглядело бы пустым:
+    // значок делает хотя бы один оборот, а итог пишем словами.
+    const spun = new Promise((resolve) => setTimeout(resolve, 700));
+    try {
+        state.renewals = {};
+        await loadSubscription();
+        if (state.tariffs) loadTariffs(true);
+        await spun;
+        const note = $("#homeMessage");
+        if (note.classList.contains("hidden") && state.servers.length) {
+            message(note, `Список обновлён · серверов: ${state.servers.length}`, "info");
+            setTimeout(() => {
+                if (note.textContent.startsWith("Список обновлён")) message(note, "");
+            }, 2500);
+        }
+    } finally {
+        await spun;
+        button.classList.remove("working");
+    }
+}
 
-$("#refresh").addEventListener("click", loadSubscription);
+$("#refreshServers").addEventListener("click", () => refreshAll($("#refreshServers")));
+$("#refresh").addEventListener("click", () => refreshAll($("#refresh")));
+
+// ================= вкладки =================
+
+/// Подложка активной вкладки едет к ней — как «остров» на Android.
+function placePill() {
+    const active = $("#dock button.active");
+    const pill = $("#dock .pill");
+    if (!active || !pill) return;
+    pill.style.width = `${active.offsetWidth}px`;
+    pill.style.transform = `translateX(${active.offsetLeft}px)`;
+}
+
+function goTab(name) {
+    document.body.dataset.tab = name;
+    $$("#dock button").forEach((node) => node.classList.toggle("active", node.dataset.go === name));
+    $$("#home .tab").forEach((node) => node.classList.toggle("active", node.dataset.tab === name));
+    $("main").scrollTop = 0;
+    placePill();
+    // подписи у вкладок раскрываются плавно — подложку ставим ещё раз по итогу
+    setTimeout(placePill, 320);
+    if (name === "plans") loadTariffs();
+    if (name === "balance") loadBalance();
+}
+
+$$("#dock button").forEach((button) =>
+    button.addEventListener("click", () => goTab(button.dataset.go)));
+window.addEventListener("resize", placePill);
+
 $("#openCabinet").addEventListener("click", () =>
     invoke("open_url", { url: "https://dprince.online/cabinet.html" })
 );
@@ -1359,9 +1463,14 @@ async function setBusy(busy, text) {
         : state.connected ? "Защищено" : "Не защищено";
     const line = busy
         ? (text && text !== title ? text : (server ? nameWithoutFlag(server.name) : ""))
-        : state.connected
-            ? [server && nameWithoutFlag(server.name), state.tun ? "весь трафик" : "прокси"].filter(Boolean).join(" · ")
-            : "Нажмите, чтобы подключиться";
+        : state.connected ? trafficLine(0, 0) : "Нажмите, чтобы подключиться";
+    if (state.connected && !busy) {
+        if (!state.connectedSince) state.connectedSince = Date.now();
+    } else if (!state.connected) {
+        state.connectedSince = 0;
+    }
+    $("#power").title = state.connected ? "Отключиться" : "Подключиться";
+    renderHeadConn();
     const status = $(".status");
     if ($("#stateTitle").textContent !== title) {
         status.classList.remove("changed");
@@ -1383,29 +1492,46 @@ function nameWithoutFlag(name) {
 // ================= получено и отправлено =================
 
 let trafficTimer = null;
+let clockTimer = null;
 
-/// Плитки «Получено / Отправлено» — пока подключены. Спрашиваем ядро раз в
-/// две секунды и только когда окно на экране: свёрнутому окну цифры не нужны.
+const trafficLine = (down, up) => `↓ ${formatBytes(down)} · ↑ ${formatBytes(up)}`;
+
+/// Пока подключены, под словом «Защищено» идут счётчики. Спрашиваем ядро раз
+/// в две секунды и только когда окно на экране: свёрнутому цифры не нужны.
 function trafficWatch(on) {
-    $("#stats").classList.toggle("hidden", !on);
     clearInterval(trafficTimer);
+    clearInterval(clockTimer);
     trafficTimer = null;
+    clockTimer = null;
     if (!on) return;
-    $("#statDown").textContent = formatBytes(0);
-    $("#statUp").textContent = formatBytes(0);
     const tick = async () => {
         if (document.hidden) return;
         try {
             const traffic = await invoke("traffic");
-            if (!traffic) return;
-            $("#statDown").textContent = formatBytes(traffic.down);
-            $("#statUp").textContent = formatBytes(traffic.up);
+            if (!traffic || !state.connected || state.busy) return;
+            $("#stateText").textContent = trafficLine(traffic.down || 0, traffic.up || 0);
         } catch {
             // счётчики — не главное: молчим, подключение от них не зависит
         }
     };
     tick();
     trafficTimer = setInterval(tick, 2000);
+    clockTimer = setInterval(renderHeadConn, 1000);
+}
+
+/// В шапке, пока подключены: флаг, город и время на связи.
+function renderHeadConn() {
+    const node = $("#headConn");
+    const server = state.servers[state.selected];
+    const on = state.connected && !state.busy && Boolean(server);
+    node.classList.toggle("hidden", !on);
+    if (!on) return;
+    const name = nameWithoutFlag(server.name);
+    const city = name.includes(" · ") ? name.slice(name.indexOf(" · ") + 3) : name;
+    const seconds = Math.max(0, Math.floor((Date.now() - (state.connectedSince || Date.now())) / 1000));
+    const pad = (value) => String(value).padStart(2, "0");
+    const time = `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+    node.textContent = `${[leadingFlag(server.name), city].filter(Boolean).join(" ")} · ${time}`;
 }
 
 /// Как на Android: «163,6 МБ».
@@ -1524,8 +1650,14 @@ async function startUpdate(now, later) {
     // после того, как подписка загрузится.
     await initAutostart();
 
+    renderThemes();
+    placePill();
+    // версия — мелкой строкой внизу «Ещё»; нет её — строка просто пустая
+    window.__TAURI__.app?.getVersion?.()
+        .then((version) => { $("#appVersion").textContent = `DarkPrince VPN ${version}`; })
+        .catch(() => {});
     if (store.loggedIn || store.guestSubscription) await enter();
-    else $("#auth").classList.remove("hidden");
+    else showApp(false);
 
     checkUpdate();
     setInterval(checkUpdate, UPDATE_EVERY);
@@ -1534,7 +1666,7 @@ async function startUpdate(now, later) {
 // ================= оформление =================
 
 const THEMES = [
-    { id: "night", title: "Ночь" },
+    { id: "night", title: "Аква" },
     { id: "sunset", title: "Закат" },
     { id: "indigo", title: "Индиго" },
     { id: "graphite", title: "Графит" },
@@ -1558,6 +1690,7 @@ function renderThemes() {
             `<span class="preview" data-theme="${theme.id}">` +
             '<span class="dots"><i></i><i></i></span>' +
             '<span class="lines"><i></i><i></i></span>' +
+            '<svg class="ic tick" viewBox="0 0 24 24"><use href="#i-check"/></svg>' +
             "</span>" +
             `<span class="title">${theme.title}</span>`;
         button.addEventListener("click", () => applyTheme(theme.id));
@@ -1570,64 +1703,7 @@ function applyTheme(id) {
     document.documentElement.dataset.theme = known;
     localStorage.setItem("dp_theme", known);
     renderThemes();
-    map.dirty = true; // акцент и светлота сменились — снимок берём другой
 }
-
-$("#themeButton").addEventListener("click", () => {
-    renderThemes();
-    $("#themeSheet").classList.remove("hidden");
-});
-
-$("#themeSheet").addEventListener("click", (event) => {
-    if (event.target === $("#themeSheet")) closeSheet($("#themeSheet"));
-});
-
-// ================= карта =================
-
-function mapView() {
-    const style = getComputedStyle(document.documentElement);
-    const server = state.servers[state.selected];
-    const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
-    return {
-        serverName: server ? server.name : null,
-        label: map.label,
-        // Светлые темы объявляют себя сами — держать их список вторым местом
-        // значит однажды забыть в нём новую тему.
-        light: read("color-scheme", "dark") === "light",
-        accent: read("--accent", "#cfaa62"),
-        panel: read("--surface-solid", "#121a29"),
-        text: read("--text", "#edf0f7"),
-    };
-}
-
-function mapFrame(now) {
-    requestAnimationFrame(mapFrame);
-    if (now - map.last < 33) return; // тридцати кадров в секунду карте хватает
-    const step = (now - map.last) / 420;
-    map.last = now;
-
-    const target = state.connected && !state.busy ? 1 : 0;
-    if (Math.abs(map.glow - target) > 0.002) {
-        const delta = target - map.glow;
-        map.glow += Math.sign(delta) * Math.min(step, Math.abs(delta));
-        map.dirty = true;
-    } else {
-        map.glow = target;
-    }
-    if (map.glow > 0.01) {
-        map.spark = (now % 2600) / 2600;
-        map.dirty = true;
-    }
-
-    if (!map.dirty) return;
-    // Снимок планеты грузится с диска не мгновенно. Пока его нет, рисовать
-    // нечего, и отметку «надо перерисовать» мы не снимаем — иначе первый
-    // кадр пропал бы, а следующего повода не нашлось бы до подключения.
-    if (DPMap.drawMap(map.canvas, mapView(), map.glow, map.spark)) map.dirty = false;
-}
-
-window.addEventListener("resize", () => { map.dirty = true; });
-requestAnimationFrame(mapFrame);
 
 // ================= ЗАПУСК ВМЕСТЕ С СИСТЕМОЙ =================
 
@@ -1669,7 +1745,7 @@ async function initAutostart() {
         } catch (error) {
             // не получилось — возвращаем галочку, а не врём про состояние
             box.checked = !wanted;
-            message($("#homeMessage"), `Не удалось изменить автозапуск: ${error}`);
+            message($("#moreMessage"), `Не удалось изменить автозапуск: ${error}`);
         }
     });
 
