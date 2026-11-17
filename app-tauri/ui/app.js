@@ -107,6 +107,29 @@ function showApp(inside) {
     if (inside) placePill();
 }
 
+/// Ожидание везде выглядит одинаково, как на Android: три бегущие точки.
+/// Кнопка на время запроса показывает их вместо подписи и не нажимается;
+/// ширину держит прежнюю, чтобы соседние кнопки не прыгали.
+const DOTS = '<span class="dots"><i></i><i></i><i></i></span>';
+
+function wait(button, on) {
+    if (!button) return;
+    button.classList.toggle("wait", on);
+    button.disabled = on;
+    button.querySelector(":scope > .dots.over")?.remove();
+    if (on) button.insertAdjacentHTML("beforeend", DOTS.replace('"dots"', '"dots over"'));
+}
+
+/// Строка списка, которая открывает панель после запроса: вместо стрелки
+/// бегут точки. Возвращает false, если запрос уже идёт.
+function rowWait(row, on) {
+    if (on && row.classList.contains("fetching")) return false;
+    row.classList.toggle("fetching", on);
+    row.querySelector(":scope > .dots")?.remove();
+    if (on) row.insertAdjacentHTML("beforeend", DOTS);
+    return true;
+}
+
 function message(node, text, type = "err") {
     node.className = `msg ${type}`;
     node.textContent = text || "";
@@ -135,7 +158,7 @@ $("#emailForm").addEventListener("submit", async (event) => {
     const password = $("#password").value;
     const button = $("#emailSubmit");
     message($("#authMessage"), "");
-    button.disabled = true;
+    wait(button, true);
     try {
         if (registerMode) {
             const auth = await api.emailRegister(email, password, $("#referral").value.trim());
@@ -150,7 +173,7 @@ $("#emailForm").addEventListener("submit", async (event) => {
     } catch (error) {
         message($("#authMessage"), error.message);
     } finally {
-        button.disabled = false;
+        wait(button, false);
     }
 });
 
@@ -169,6 +192,7 @@ $("#forgot").addEventListener("click", async () => {
 });
 
 let polling = false;
+let telegramCancelled = false;
 
 $("#telegramButton").addEventListener("click", async () => {
     if (polling) return;
@@ -187,14 +211,20 @@ $("#telegramButton").addEventListener("click", async () => {
     }
 
     invoke("open_url", { url: `https://t.me/${request.bot_username}?start=webauth_${request.token}` });
-    message($("#authMessage"), "Подтвердите вход в Telegram — я подожду.", "info");
+    message($("#authMessage"), "Откройте Telegram и нажмите «Start», ждём подтверждения…", "info");
 
     polling = true;
-    $("#telegramButton").disabled = true;
+    telegramCancelled = false;
+    wait($("#telegramButton"), true);
+    $("#telegramCancel").classList.remove("hidden");
     const deadline = Date.now() + (Number(request.expires_in) || 300) * 1000;
     try {
         while (Date.now() < deadline) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
+            if (telegramCancelled) {
+                message($("#authMessage"), "");
+                return;
+            }
             let response;
             try {
                 response = await api.deepLinkPoll(request.token);
@@ -217,8 +247,16 @@ $("#telegramButton").addEventListener("click", async () => {
         message($("#authMessage"), "Время авторизации истекло, попробуйте ещё раз.");
     } finally {
         polling = false;
-        $("#telegramButton").disabled = false;
+        wait($("#telegramButton"), false);
+        $("#telegramCancel").classList.add("hidden");
     }
+});
+
+$("#telegramCancel").addEventListener("click", () => {
+    telegramCancelled = true;
+    // ждать конца двухсекундного шага незачем: кнопку возвращаем сразу
+    $("#telegramCancel").classList.add("hidden");
+    message($("#authMessage"), "");
 });
 
 // Общая точка для вставленной ссылки и QR из файла. Ссылку сохраняем только
@@ -237,7 +275,8 @@ async function activateGuestSubscription(rawLink) {
 
     const controls = [$("#guestSubmit"), $("#guestQrButton")];
     controls.forEach((button) => (button.disabled = true));
-    message($("#guestMessage"), "Проверяю подписку…", "info");
+    wait($("#guestSubmit"), true);
+    message($("#guestMessage"), "");
     try {
         const { servers } = await fetchServers(url);
         store.guestSubscription = url;
@@ -260,6 +299,7 @@ async function activateGuestSubscription(rawLink) {
     } catch (error) {
         message($("#guestMessage"), `Не удалось загрузить подписку: ${String(error)}`);
     } finally {
+        wait($("#guestSubmit"), false);
         controls.forEach((button) => (button.disabled = false));
     }
 }
@@ -280,8 +320,8 @@ $("#guestQrButton").addEventListener("click", () => {
 $("#guestQrFile").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    $("#guestQrButton").disabled = true;
-    message($("#guestMessage"), "Читаю QR-код…", "info");
+    wait($("#guestQrButton"), true);
+    message($("#guestMessage"), "");
     try {
         const rawLink = await GuestAccess.decodeQrFile(file);
         $("#guestLink").value = rawLink;
@@ -289,7 +329,7 @@ $("#guestQrFile").addEventListener("change", async (event) => {
     } catch (error) {
         message($("#guestMessage"), error.message || String(error));
     } finally {
-        $("#guestQrButton").disabled = false;
+        wait($("#guestQrButton"), false);
     }
 });
 
@@ -329,6 +369,14 @@ async function enter() {
 
 async function loadSubscription() {
     message($("#homeMessage"), "");
+    if (!state.servers.length) {
+        $("#serverEmpty").innerHTML = loadingCapsule("Загружаем серверы");
+        $("#serverEmpty").classList.remove("hidden");
+    }
+    if (!state.subscription && !state.usingSharedSubscription) {
+        $("#planName").textContent = "Подписка";
+        $("#planState").innerHTML = DOTS;
+    }
     const sharedUrl = store.guestSubscription;
     state.guestMode = !store.loggedIn && Boolean(sharedUrl);
     state.usingSharedSubscription = state.guestMode;
@@ -534,6 +582,7 @@ $("#pickSheet").addEventListener("click", (event) => {
 // ================= баланс, тарифы, продление =================
 
 async function loadBalance() {
+    if (state.balanceKopeks === null) $("#balanceValue").innerHTML = DOTS;
     try {
         const data = await api.balance();
         state.balanceKopeks = data.balance_kopeks ?? data.balance ?? null;
@@ -612,7 +661,7 @@ function periodPicker(key, periods, verb, onPay) {
         note.textContent = short
             ? `Нужно ${money(period.price)}, на балансе ${money(state.balanceKopeks)}`
             : period.daily ? "Списывается с баланса каждый день" : "Спишется с баланса";
-        pay.onclick = () => (short ? goTab("balance") : onPay(period));
+        pay.onclick = () => (short ? goTab("balance") : onPay(period, pay));
     };
     periods.forEach((period, index) => {
         const chip = linkNode("button", { className: "chip-btn", textContent: periodTitle(period) });
@@ -694,8 +743,8 @@ async function fillRenewal(slot, sub) {
     const periods = state.renewals[key];
     slot.innerHTML = "";
     if (!periods.length) return;
-    slot.append(periodPicker(key, periods, "Продлить", (period) =>
-        buy(() => api.renew(period.days, sub.id), "Подписка продлена.")));
+    slot.append(periodPicker(key, periods, "Продлить", (period, button) =>
+        buy(() => api.renew(period.days, sub.id), "Подписка продлена.", button)));
 }
 
 /// «Выберите тариф»: список раскрывается на месте, как на телефоне.
@@ -745,8 +794,8 @@ function renderTariffs() {
             const body = linkNode("div", { className: "tariff-body" });
             if (tariff.description) body.append(linkNode("p", { className: "hint", textContent: tariff.description }));
             if (periods.length) {
-                body.append(periodPicker(`t${tariff.id}`, periods, "Оформить", (period) =>
-                    buy(() => api.purchaseTariff(tariff.id, period.days), "Тариф оформлен.")));
+                body.append(periodPicker(`t${tariff.id}`, periods, "Оформить", (period, button) =>
+                    buy(() => api.purchaseTariff(tariff.id, period.days), "Тариф оформлен.", button)));
             } else {
                 body.append(linkNode("p", { className: "hint", textContent: "У тарифа не задано ни одного срока." }));
             }
@@ -759,12 +808,16 @@ function renderTariffs() {
 // ================= устройства, промокоды, рефералы =================
 
 $("#openDevices").addEventListener("click", async () => {
+    const row = $("#openDevices");
+    if (!rowWait(row, true)) return;
     let data;
     try {
         data = await api.devices(state.subscription?.id);
     } catch (error) {
         message($("#moreMessage"), error.message);
         return;
+    } finally {
+        rowWait(row, false);
     }
     const devices = data.devices || data.items || [];
     const limit = state.subscription?.device_limit;
@@ -800,13 +853,16 @@ function confirmRemoveDevice(device) {
         ],
         async (index) => {
             if (index !== 0) return;
-            message($("#moreMessage"), "Отключаю…", "info");
+            message($("#moreMessage"), "");
+            rowWait($("#openDevices"), true);
             try {
                 await api.removeDevice(hwid, state.subscription?.id);
                 await loadSubscription();
                 message($("#moreMessage"), `Устройство «${name}» отключено.`, "info");
             } catch (error) {
                 message($("#moreMessage"), error.message);
+            } finally {
+                rowWait($("#openDevices"), false);
             }
         }
     );
@@ -816,8 +872,8 @@ $("#promoForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const code = $("#promoCode").value.trim();
     if (!code) return;
-    $("#promoSubmit").disabled = true;
-    message($("#balanceMessage"), "Проверяю промокод…", "info");
+    wait($("#promoSubmit"), true);
+    message($("#balanceMessage"), "");
     try {
         const result = await api.activatePromo(code);
         $("#promoCode").value = "";
@@ -826,17 +882,21 @@ $("#promoForm").addEventListener("submit", async (event) => {
     } catch (error) {
         message($("#balanceMessage"), error.message);
     } finally {
-        $("#promoSubmit").disabled = false;
+        wait($("#promoSubmit"), false);
     }
 });
 
 $("#openReferral").addEventListener("click", async () => {
+    const row = $("#openReferral");
+    if (!rowWait(row, true)) return;
     let data;
     try {
         data = await api.referral();
     } catch (error) {
         message($("#moreMessage"), error.message);
         return;
+    } finally {
+        rowWait(row, false);
     }
     const link = data.referral_link || data.link || "";
     const invited = data.invited_count ?? data.total_invited ?? 0;
@@ -855,8 +915,10 @@ $("#openReferral").addEventListener("click", async () => {
 /// Общая часть покупки: платит сервер, мы показываем итог и перечитываем
 /// состояние. Ошибку показываем как есть — в ней написана причина отказа,
 /// чаще всего нехватка денег.
-async function buy(action, successText) {
-    message($("#plansMessage"), "Отправляю…", "info");
+async function buy(action, successText, button) {
+    if (button?.classList.contains("wait")) return; // второе нажатие — не вторая оплата
+    message($("#plansMessage"), "");
+    wait(button, true);
     try {
         await action();
         // Порядок важен: loadSubscription чистит сообщения, поэтому итог
@@ -867,7 +929,10 @@ async function buy(action, successText) {
         message($("#plansMessage"), successText, "info");
     } catch (error) {
         message($("#plansMessage"), error.message);
+        wait(button, false);
     }
+    // итог написан наверху вкладки — показываем его, а не оставляем за краем
+    $("main").scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // Идентификатор этого компьютера для учёта в панели. Живёт один на
@@ -969,7 +1034,7 @@ function showEmailForm(card) {
             : password.value.length < 8 ? "Пароль — не короче 8 символов"
             : password.value !== repeat.value ? "Пароли не совпадают" : "";
         if (problem) return message(note, problem);
-        submit.disabled = true;
+        wait(submit, true);
         try {
             const result = await api.linkEmail(address, password.value);
             if (result.merge_required) return showMergeCode(card, address);
@@ -981,7 +1046,7 @@ function showEmailForm(card) {
         } catch (error) {
             message(note, linkErrorText(error));
         } finally {
-            submit.disabled = false;
+            wait(submit, false);
         }
     });
     card.append(
@@ -1004,7 +1069,7 @@ function showMergeCode(card, address) {
     submit.addEventListener("click", async () => {
         const value = code.value.replace(/\D/g, "");
         if (value.length !== 6) return message(note, "Код — 6 цифр из письма");
-        submit.disabled = true;
+        wait(submit, true);
         try {
             const result = await api.verifyEmailMerge(value);
             if (!result.merge_token) throw new Error("Бот не прислал подтверждение объединения");
@@ -1012,7 +1077,7 @@ function showMergeCode(card, address) {
         } catch (error) {
             message(note, linkErrorText(error));
         } finally {
-            submit.disabled = false;
+            wait(submit, false);
         }
     });
     card.append(
@@ -1053,7 +1118,7 @@ function showMergeChoice(card, token, preview) {
     const submit = linkNode("button", { className: "small", textContent: "Объединить аккаунты" });
     submit.addEventListener("click", async () => {
         if (!confirm("Объединить аккаунты? Вторая подписка пропадёт, отменить это нельзя.")) return;
-        submit.disabled = true;
+        wait(submit, true);
         try {
             const result = await api.executeMerge(token, keep);
             store.save(result);
@@ -1062,7 +1127,7 @@ function showMergeChoice(card, token, preview) {
         } catch (error) {
             message(note, linkErrorText(error));
         } finally {
-            submit.disabled = false;
+            wait(submit, false);
         }
     });
     card.append(
@@ -1183,7 +1248,7 @@ function renderSubscription() {
 
 /// Пусто в списке серверов — говорим почему, одной строкой на его месте.
 function serverEmpty(text) {
-    $("#serverEmpty").textContent = text;
+    $("#serverEmpty").textContent = text; // заодно снимает капсулу загрузки
     renderServer();
 }
 
@@ -1240,6 +1305,7 @@ $("#pingButton").addEventListener("click", async () => {
     const button = $("#pingButton");
     if (button.classList.contains("working") || !state.servers.length) return;
     button.classList.add("working");
+    button.insertAdjacentHTML("afterbegin", DOTS);
     try {
         state.pings = await invoke("ping_servers");
     } catch (error) {
@@ -1248,6 +1314,7 @@ $("#pingButton").addEventListener("click", async () => {
         console.error(error);
     } finally {
         button.classList.remove("working");
+        button.querySelector(".dots")?.remove();
         renderServer();
     }
 });

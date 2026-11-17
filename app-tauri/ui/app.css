@@ -1175,3 +1175,24 @@ button.item.danger:hover { background: var(--danger-bg); }
    время на связи живут там же, справа. */
 .titlebar .head-conn { margin-right: 8px; font-size: 12px; }
 .hero { padding-top: 12px; }
+
+/* ---------- ожидание ---------- */
+
+/* Кнопка ждёт ответа: подпись прячется, поверх бегут точки. Размер кнопки
+   не меняется — подпись остаётся в потоке, просто прозрачная. */
+button.wait { position: relative; color: transparent !important; opacity: 1; cursor: default; }
+button.wait > :not(.dots) { visibility: hidden; }
+.dots.over { position: absolute; inset: 0; align-items: center; justify-content: center; }
+button.primary .dots i { background: var(--on-accent); }
+
+/* строка, открывающая панель: точки на месте стрелки */
+.item.fetching > .chev { display: none; }
+.item.fetching { cursor: default; }
+.item > .dots { flex: none; margin-right: 2px; }
+
+/* «Пинг»: точки вместо значка */
+#pingButton.working .ic { display: none; }
+
+#planState .dots, #balanceValue .dots { padding: 6px 0; }
+#balanceValue .dots i { width: 8px; height: 8px; }
+#serverEmpty .loading { margin: 6px auto; }
