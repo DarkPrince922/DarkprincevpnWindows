@@ -173,11 +173,18 @@
     /* свечение в левом верхнем углу: по умолчанию — вторым цветом темы */
     --glow-rgb: var(--accent-2-rgb);
     --dock: var(--surface-solid);
+    --dock-line: var(--outline);
+    /* подключены — акцент; на тёмных темах без подключения — белый */
+    --dock-active: var(--accent);
 }
+
+[data-theme="night"] body:not(.connected),
+[data-theme="sunset"] body:not(.connected) { --dock-active: var(--text); }
 
 [data-theme="night"] {
     --glow-rgb: 95, 240, 223;
-    --dock: rgba(14, 23, 31, 0.92);
+    --dock: rgba(13, 21, 29, 0.96);
+    --dock-line: rgba(95, 240, 223, 0.2);
 }
 
 * {
@@ -285,7 +292,7 @@ main {
     padding: 4px 18px 24px;
 }
 
-body.in-app main { padding-bottom: 104px; }
+body.in-app main { padding-bottom: 112px; }
 
 main::-webkit-scrollbar,
 .sheet .panel::-webkit-scrollbar { width: 6px; }
@@ -945,70 +952,83 @@ label.item { cursor: pointer; }
 
 /* ---------- нижний остров ---------- */
 
+/* Те же размеры, что у AquaNavBar на Android: остров во всю ширину с полями
+   16, высота 68, скругление 28, плотная подложка, тонкая кромка акцента и
+   мягкая тень. Выбранный пункт в 2,6 раза шире остальных и показывает
+   подпись; остальные — только значки. */
 .dock {
     position: fixed;
-    left: 50%;
-    bottom: 16px;
-    transform: translateX(-50%);
+    left: 0;
+    right: 0;
+    bottom: 12px;
     z-index: 10;
     display: none;
-    padding: 6px;
-    border-radius: 999px;
+    width: calc(100% - 32px);
+    max-width: 488px;
+    height: 68px;
+    margin: 0 auto;
+    padding: 7px 6px;
+    border-radius: 28px;
     background: var(--dock);
-    border: 1px solid var(--outline);
-    backdrop-filter: blur(24px);
-    box-shadow: 0 14px 40px var(--shadow), inset 0 1px 0 var(--gloss);
+    border: 1px solid var(--dock-line);
+    box-shadow: 0 18px 44px var(--shadow), 0 2px 10px var(--shadow);
 }
 
 body.in-app .dock { display: flex; }
 
-/* Лента уходит под остров не обрезом, а растворяясь: строки под ним не
-   спорят с подписями вкладок. */
+/* Лента уходит под остров не обрезом, а растворяясь. */
 body.in-app::after {
     content: "";
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    height: 118px;
+    height: 124px;
     z-index: 5;
     pointer-events: none;
-    background: linear-gradient(180deg, transparent, var(--bg) 62%);
-}
-
-/* подложка активной вкладки: едет под нужную кнопку */
-.dock .pill {
-    position: absolute;
-    top: 6px;
-    bottom: 6px;
-    left: 0;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    border: 1px solid var(--accent-line);
-    transition: transform 0.45s var(--ease), width 0.45s var(--ease);
+    background: linear-gradient(180deg, transparent, var(--bg) 66%);
 }
 
 .dock button {
-    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 54px;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0;
-    border: 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 21px;
     background: transparent;
     backdrop-filter: none;
     color: var(--muted);
-    padding: 12px 17px;
-    font-size: 13.5px;
-    font-weight: 600;
-    transition: color 0.3s var(--ease), padding 0.35s var(--ease), gap 0.35s var(--ease);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    /* ширина, подсветка и подпись едут вместе — одно движение, как пружина */
+    transition: flex-grow 0.42s var(--ease), background 0.42s var(--ease), border-color 0.42s var(--ease),
+        color 0.3s var(--ease), gap 0.42s var(--ease);
 }
 
-.dock button .ic { width: 21px; height: 21px; stroke-width: 1.6; }
-.dock button span { max-width: 0; opacity: 0; overflow: hidden; white-space: nowrap; transition: max-width 0.35s var(--ease), opacity 0.3s; }
-.dock button.active { color: var(--accent); gap: 9px; padding: 12px 22px; }
-.dock button.active span { max-width: 90px; opacity: 1; }
-.dock button:not(.active):hover { color: var(--text); }
+.dock button .ic { width: 23px; height: 23px; stroke-width: 1.4; }
+.dock button span { max-width: 0; opacity: 0; overflow: hidden; transition: max-width 0.42s var(--ease), opacity 0.3s var(--ease); }
+
+.dock button.active {
+    flex-grow: 2.6;
+    gap: 8px;
+    color: var(--dock-active);
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+}
+
+.dock button.active span { max-width: 96px; opacity: 1; }
+.dock button:not(.active):hover { color: var(--text); border-color: transparent; }
+.dock button:hover { border-color: var(--accent-line); }
+.dock button:not(.active):hover { border-color: transparent; }
 .dock button:active { transform: none; }
+.dock button.hidden { display: none; }
 
 /* ---------- панели снизу ---------- */
 
@@ -1235,3 +1255,9 @@ input[type="radio"]:checked { border-color: var(--accent); box-shadow: inset 0 0
 
 /* в коде у радио стоит width:auto — держим круг своим размером */
 input[type="radio"] { width: 20px !important; min-width: 20px; }
+
+/* Один внутренний отступ на всё: текст в карточках, строках списков и
+   раскрытых тарифах стоит на одной вертикали (18 от края стекла). */
+.item { padding-left: 18px; padding-right: 18px; }
+.tariff-body { padding-left: 18px; padding-right: 18px; }
+.balance-card { padding: 18px; }

@@ -104,7 +104,6 @@ function showApp(inside) {
     $("#auth").classList.toggle("hidden", inside);
     $("#home").classList.toggle("hidden", !inside);
     document.body.classList.toggle("in-app", inside);
-    if (inside) placePill();
 }
 
 /// Ожидание везде выглядит одинаково, как на Android: три бегущие точки.
@@ -493,7 +492,6 @@ function renderAccessMode() {
         : "Выйти из аккаунта";
     // гостю тарифы и баланс недоступны: если он стоял на них — уводим домой
     if (state.guestMode && ["plans", "balance"].includes(document.body.dataset.tab)) goTab("home");
-    placePill();
 
     const shared = state.guestMode || state.usingSharedSubscription;
     $("#guestAccessCard").classList.toggle("hidden", !shared);
@@ -1351,30 +1349,17 @@ $("#refresh").addEventListener("click", () => refreshAll($("#refresh")));
 
 // ================= вкладки =================
 
-/// Подложка активной вкладки едет к ней — как «остров» на Android.
-function placePill() {
-    const active = $("#dock button.active");
-    const pill = $("#dock .pill");
-    if (!active || !pill) return;
-    pill.style.width = `${active.offsetWidth}px`;
-    pill.style.transform = `translateX(${active.offsetLeft}px)`;
-}
-
 function goTab(name) {
     document.body.dataset.tab = name;
     $$("#dock button").forEach((node) => node.classList.toggle("active", node.dataset.go === name));
     $$("#home .tab").forEach((node) => node.classList.toggle("active", node.dataset.tab === name));
     $("main").scrollTop = 0;
-    placePill();
-    // подписи у вкладок раскрываются плавно — подложку ставим ещё раз по итогу
-    setTimeout(placePill, 320);
     if (name === "plans") loadTariffs();
     if (name === "balance") loadBalance();
 }
 
 $$("#dock button").forEach((button) =>
     button.addEventListener("click", () => goTab(button.dataset.go)));
-window.addEventListener("resize", placePill);
 
 $("#openCabinet").addEventListener("click", () =>
     invoke("open_url", { url: "https://dprince.online/cabinet.html" })
@@ -1719,7 +1704,6 @@ async function startUpdate(now, later) {
     await initAutostart();
 
     renderThemes();
-    placePill();
     // версия — мелкой строкой внизу «Ещё»; нет её — строка просто пустая
     window.__TAURI__.app?.getVersion?.()
         .then((version) => { $("#appVersion").textContent = `DarkPrince VPN ${version}`; })
