@@ -40,10 +40,11 @@
     </div>
 
     <header class="titlebar" data-tauri-drag-region>
-        <img src="logo.png" alt="" data-tauri-drag-region>
-        <span class="name" data-tauri-drag-region>DarkPrince VPN</span>
-        <span class="spacer" data-tauri-drag-region></span>
+        <!-- Знак слева, по центру — капсула состояния: куда подключены и
+             сколько на связи, а без подключения — «Не подключено». -->
+        <img class="mark" src="mark.png" alt="DarkPrince VPN" data-tauri-drag-region>
         <span class="head-conn hidden" id="headConn" data-tauri-drag-region></span>
+        <span class="head-idle" id="headIdle" data-tauri-drag-region>Не подключено</span>
         <button class="winbtn" id="minimize" title="Свернуть">
             <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 5.5h11" stroke="currentColor" stroke-width="1.2" /></svg>
         </button>

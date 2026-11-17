@@ -1584,6 +1584,8 @@ function renderHeadConn() {
     const server = state.servers[state.selected];
     const on = state.connected && !state.busy && Boolean(server);
     node.classList.toggle("hidden", !on);
+    // без подключения — серая капсула; пока подключаемся, капсулы нет совсем
+    $("#headIdle").classList.toggle("hidden", on || state.busy);
     if (!on) return;
     const name = nameWithoutFlag(server.name);
     // «Wi-Fi • Нидерланды • Лимбург» → «Лимбург»: в заголовке место узкое,
